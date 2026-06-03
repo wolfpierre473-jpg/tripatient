@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TriPatient — Classement des mails</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+
+    /* ── Header ── */
+    header { background: linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%); color:white; padding:15px 24px; display:flex; align-items:center; gap:14px; box-shadow:0 2px 8px rgba(0,0,0,.2); flex-wrap:wrap; }
+    header .logo { font-size:1.8rem; }
+    header h1  { font-size:1.25rem; font-weight:700; }
+    header p   { font-size:0.8rem; opacity:.8; margin-top:1px; }
+    .header-right { margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .clock { font-size:0.76rem; opacity:.85; text-align:right; }
+
+    .btn-gmail { display:inline-flex; align-items:center; gap:7px; background:white; color:#1a365d; border:none; border-radius:8px; padding:7px 14px; font-size:0.81rem; font-weight:700; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.15); transition:.15s; }
+    .btn-gmail:hover { background:#ebf8ff; }
+    .btn-gmail.connected { background:#c6f6d5; color:#276749; }
+    .gmail-dot { width:8px; height:8px; border-radius:50%; background:#fc8181; display:inline-block; }
+    .gmail-dot.on { background:#68d391; }
+
+    /* ── Stats bar ── */
+    .stats-bar { background:white; padding:10px 24px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #e2e8f0; flex-wrap:wrap; }
+    .stat-chip { display:flex; align-items:center; gap:5px; padding:3px 11px; border-radius:14px; font-size:0.81rem; font-weight:600; }
+    .stat-chip.urgent    { background:#fff5f5; color:#c53030; border:1px solid #fed7d7; }
+    .stat-chip.moyen     { background:#fffaf0; color:#c05621; border:1px solid #feebc8; }
+    .stat-chip.pasurgent { background:#f0fff4; color:#276749; border:1px solid #c6f6d5; }
+    .stat-chip.inconnu   { background:#f7fafc; color:#718096; border:1px solid #e2e8f0; }
+    .stat-label { font-size:0.76rem; color:#718096; margin-left:auto; }
+    .icon-btn { background:none; border:1px solid #e2e8f0; border-radius:7px; padding:3px 10px; font-size:0.74rem; color:#718096; cursor:pointer; }
+    .icon-btn:hover { background:#f7fafc; }
+
+    /* ── Sync bar ── */
+    .sync-bar { background:#ebf8ff; border-bottom:1px solid #bee3f8; padding:8px 24px; font-size:0.79rem; color:#2b6cb0; display:none; align-items:center; gap:10px; }
+    .sync-bar.visible { display:flex; }
+    .spinner { width:13px; height:13px; border:2px solid #bee3f8; border-top-color:#2b6cb0; border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .btn-sm { background:#2b6cb0; color:white; border:none; border-radius:6px; padding:3px 11px; font-size:0.76rem; font-weight:600; cursor:pointer; margin-left:auto; }
+    .btn-sm:hover { background:#2c5282; }
+
+    /* ── Setup banner ── */
+    .setup-banner { background:white; border:2px dashed #bee3f8; border-radius:12px; margin:28px auto; max-width:640px; padding:32px 36px; text-align:center; }
+    .setup-banner h2 { font-size:1.05rem; color:#1a365d; margin-bottom:8px; }
+    .setup-banner p  { font-size:0.84rem; color:#718096; margin-bottom:20px; line-height:1.65; }
+    .setup-steps { text-align:left; margin:0 auto 22px; max-width:520px; }
+    .setup-steps li { font-size:0.82rem; color:#4a5568; padding:7px 0; border-bottom:1px solid #f0f4f8; display:flex; gap:10px; align-items:flex-start; }
+    .setup-steps li:last-child { border-bottom:none; }
+    .step-num { background:#2b6cb0; color:white; border-radius:50%; width:20px; height:20px; font-size:0.68rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+    .setup-steps a { color:#2b6cb0; font-weight:600; }
+    .setup-steps code { background:#f0f4f8; padding:1px 6px; border-radius:4px; font-size:0.8rem; }
+    .field-row { display:flex; gap:8px; max-width:520px; margin:0 auto 10px; }
+    .field-row input { flex:1; padding:8px 11px; border:1px solid #e2e8f0; border-radius:8px; font-size:0.83rem; font-family:inherit; }
+    .field-row input:focus { outline:none; border-color:#2b6cb0; }
+    .btn-primary { background:#2b6cb0; color:white; border:none; border-radius:8px; padding:9px 18px; font-size:0.83rem; font-weight:700; cursor:pointer; white-space:nowrap; }
+    .btn-primary:hover { background:#2c5282; }
+
+    /* ── Main ── */
+    main { max-width:940px; margin:20px auto; padding:0 16px 70px; }
+    .legend-panel { display:none; background:white; border:1px solid #e2e8f0; border-radius:10px; margin-bottom:14px; padding:13px 18px; font-size:0.79rem; }
+    .legend-panel.open { display:block; }
+    .legend-panel table { width:100%; border-collapse:collapse; }
+    .legend-panel td { padding:5px 10px; border-bottom:1px solid #f0f4f8; vertical-align:top; }
+    .legend-panel td:first-child { font-weight:600; color:#553c9a; width:55%; }
+    .legend-panel tr:last-child td { border-bottom:none; }
+
+    .section-title { font-size:0.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.12em; color:#a0aec0; margin:20px 0 8px; display:flex; align-items:center; gap:8px; }
+    .section-title::after { content:""; flex:1; height:1px; background:#e2e8f0; }
+
+    /* ── Cards ── */
+    .mail-card { background:white; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07); margin-bottom:9px; border-left:5px solid; overflow:hidden; transition:box-shadow .15s; }
+    .mail-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.11); }
+    .mail-card.urgent    { border-color:#fc8181; }
+    .mail-card.moyen     { border-color:#f6ad55; }
+    .mail-card.pasurgent { border-color:#68d391; }
+    .mail-card.inconnu   { border-color:#cbd5e0; }
+    .mail-card.traite    { opacity:.55; }
+
+    .card-header { padding:12px 15px 10px; display:flex; align-items:flex-start; gap:11px; cursor:pointer; user-select:none; }
+    .rank { font-size:0.69rem; font-weight:800; color:#cbd5e0; min-width:22px; padding-top:3px; }
+    .niveau-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 9px; border-radius:11px; font-size:0.68rem; font-weight:800; white-space:nowrap; letter-spacing:.04em; }
+    .niveau-badge.urgent    { background:#fff5f5; color:#c53030; }
+    .niveau-badge.moyen     { background:#fffaf0; color:#c05621; }
+    .niveau-badge.pasurgent { background:#f0fff4; color:#276749; }
+    .niveau-badge.inconnu   { background:#f7fafc; color:#718096; }
+
+    .card-main { flex:1; min-width:0; }
+    .card-top  { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:3px; }
+    .patient-name { font-weight:700; font-size:0.9rem; }
+    .patient-id   { font-size:0.7rem; color:#a0aec0; }
+    .mail-time    { font-size:0.7rem; color:#718096; margin-left:auto; white-space:nowrap; }
+    .mail-sujet   { font-size:0.84rem; color:#4a5568; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pattern-match { display:inline-flex; align-items:center; gap:4px; margin-top:4px; font-size:0.69rem; font-weight:600; color:#805ad5; background:#faf5ff; border:1px solid #e9d8fd; border-radius:6px; padding:1px 7px; }
+    .src-badge { font-size:0.67rem; color:#a0aec0; background:#f7fafc; border:1px solid #e2e8f0; border-radius:5px; padding:1px 6px; }
+    .expand-icon { color:#cbd5e0; font-size:0.72rem; padding-top:4px; transition:transform .2s; flex-shrink:0; }
+    .mail-card.open .expand-icon { transform:rotate(180deg); }
+
+    .card-detail { display:none; padding:0 15px 15px 49px; }
+    .mail-card.open .card-detail { display:block; }
+    .detail-sep { height:1px; background:#f0f4f8; margin-bottom:12px; }
+    .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-bottom:9px; }
+    @media(max-width:540px){ .detail-grid{grid-template-columns:1fr;} }
+    .detail-box { background:#f7fafc; border-radius:8px; padding:9px 12px; }
+    .detail-box h4 { font-size:0.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a0aec0; margin-bottom:6px; }
+    .detail-box p  { font-size:0.8rem; color:#4a5568; margin-bottom:3px; }
+    .tag { display:inline-block; background:#ebf8ff; color:#2b6cb0; border-radius:5px; padding:1px 7px; font-size:0.69rem; font-weight:600; margin:2px 2px 0 0; }
+    .rule-hit { font-size:0.69rem; font-weight:700; }
+    .rule-hit.urgent    { color:#c53030; }
+    .rule-hit.moyen     { color:#c05621; }
+    .rule-hit.pasurgent { color:#276749; }
+    .rule-hit.inconnu   { color:#718096; }
+    .mail-body-box { background:#f7fafc; border-radius:8px; padding:10px 13px; font-size:0.8rem; color:#4a5568; line-height:1.65; border-left:3px solid #e2e8f0; white-space:pre-wrap; word-break:break-word; }
+    .mail-body-box h4 { font-size:0.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a0aec0; margin-bottom:6px; }
+
+    .btn-traite { background:#e2e8f0; color:#4a5568; border:none; border-radius:6px; padding:4px 12px; font-size:0.76rem; font-weight:600; cursor:pointer; margin-top:10px; }
+    .btn-traite:hover { background:#cbd5e0; }
+    .btn-traite.done { background:#c6f6d5; color:#276749; }
+
+    /* ── FAB ── */
+    .fab { position:fixed; bottom:22px; right:22px; background:#2b6cb0; color:white; border:none; border-radius:50%; width:50px; height:50px; font-size:1.35rem; cursor:pointer; box-shadow:0 4px 16px rgba(43,108,176,.4); z-index:100; transition:.15s; }
+    .fab:hover { background:#2c5282; transform:scale(1.05); }
+
+    /* ── Modal ── */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:white; border-radius:13px; padding:23px; width:min(510px,95vw); max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+    .modal h2 { font-size:.98rem; margin-bottom:15px; color:#1a365d; }
+    .form-group { margin-bottom:11px; }
+    .form-group label { display:block; font-size:0.77rem; font-weight:600; color:#4a5568; margin-bottom:3px; }
+    .form-group input,.form-group textarea,.form-group select { width:100%; padding:7px 10px; border:1px solid #e2e8f0; border-radius:7px; font-size:0.84rem; font-family:inherit; }
+    .form-group textarea { min-height:82px; resize:vertical; }
+    .modal-actions { display:flex; gap:9px; justify-content:flex-end; margin-top:14px; }
+    .btn-ghost { background:#e2e8f0; color:#4a5568; border:none; border-radius:7px; padding:7px 16px; font-size:0.84rem; font-weight:600; cursor:pointer; }
+
+    .toast { position:fixed; bottom:84px; right:22px; color:white; border-radius:9px; padding:9px 16px; font-size:0.81rem; max-width:300px; box-shadow:0 4px 16px rgba(0,0,0,.2); z-index:300; display:none; }
+    .toast.visible { display:block; }
+    .empty { text-align:center; color:#a0aec0; padding:40px; font-size:0.9rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🩺</span>
+  <div>
+    <h1>TriPatient</h1>
+    <p>Classification des mails — Cabinet de Dermatologie</p>
+  </div>
+  <div class="header-right">
+    <div class="clock" id="clock"></div>
+    <button class="btn-gmail" id="btnGmail" onclick="handleGmailAuth()">
+      <span class="gmail-dot" id="gmailDot"></span>
+      <span id="btnGmailLabel">Connecter Gmail</span>
+    </button>
+  </div>
+</header>
+
+<div class="stats-bar" id="statsBar">
+  <span class="stat-label">Chargement…</span>
+</div>
+
+<div class="sync-bar" id="syncBar">
+  <div class="spinner"></div>
+  <span id="syncMsg">Synchronisation…</span>
+  <button class="btn-sm" onclick="syncGmail()">↻ Actualiser</button>
+</div>
+
+<main id="main"></main>
+
+<div class="toast" id="toast"></div>
+<button class="fab" onclick="openModal()">+</button>
+
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalIfOutside(event)">
+  <div class="modal">
+    <h2>📨 Ajouter un mail manuellement</h2>
+    <div class="form-group"><label>Patient</label><select id="selectPatient"></select></div>
+    <div class="form-group"><label>Sujet</label><input type="text" id="inSujet" /></div>
+    <div class="form-group"><label>Contenu</label><textarea id="inCorps"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn-primary" onclick="ajouterMail()">Analyser & Classer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- Supabase JS v2 CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// CONFIG — rempli automatiquement par Vercel (env vars) ou localStorage
+// ════════════════════════════════════════════════════════════════
+const ENV = {
+  supabaseUrl:  "%%SUPABASE_URL%%",           // remplacé au build OU via localStorage
+  supabaseKey:  "%%SUPABASE_ANON_KEY%%",      // remplacé au build OU via localStorage
+  gmailClientId:"%%GMAIL_CLIENT_ID%%",        // remplacé au build OU via localStorage
+};
+
+// Fallback localStorage (pour dev local ou si les variables ne sont pas injectées)
+function cfg(key, envVal) {
+  if (envVal && !envVal.startsWith("%%")) return envVal;
+  return localStorage.getItem("tp_" + key) || "";
+}
+
+const SUPABASE_URL   = cfg("supabaseUrl",   ENV.supabaseUrl);
+const SUPABASE_KEY   = cfg("supabaseKey",   ENV.supabaseKey);
+const GMAIL_CLIENT_ID= cfg("gmailClientId", ENV.gmailClientId);
+
+// ── Supabase client ──────────────────────────────────────────
+let sb = null;
+if (SUPABASE_URL && SUPABASE_KEY) {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
+
+// ════════════════════════════════════════════════════════════════
+// État local (fallback si Supabase pas encore configuré)
+// ════════════════════════════════════════════════════════════════
+let PATIENTS = [];
+let MAILS    = [];
+
+const DEMO_MAILS = [
+  { id:"M001", email_expediteur:"sophie.martin@email.com",  date_reception:"2026-05-29T08:15:00", sujet:"Tache suspecte apparue rapidement",       corps:"Bonjour docteur, depuis 3 jours j'ai remarqué une nouvelle tache foncée sur mon dos qui a l'air de grandir. Elle est asymétrique et les bords sont irréguliers.", source:"demo", traite:false },
+  { id:"M002", email_expediteur:"jean.dubois@email.com",    date_reception:"2026-05-29T09:30:00", sujet:"Renouvellement ordonnance",                corps:"Bonjour, mon ordonnance de méthotrexate arrive à expiration. Pourriez-vous me faire un renouvellement ? Mon état est stable.", source:"demo", traite:false },
+  { id:"M003", email_expediteur:"emma.leroy@email.com",     date_reception:"2026-05-29T10:00:00", sujet:"Effets secondaires traitement",            corps:"Docteur, depuis l'isotrétinoïne j'ai des maux de tête quotidiens et un bouton qui persiste depuis 2 semaines.", source:"demo", traite:false },
+  { id:"M004", email_expediteur:"michel.bernard@email.com", date_reception:"2026-05-29T07:45:00", sujet:"URGENT - Apparition de nouvelles lésions", corps:"Docteur, depuis hier soir de nouvelles plaques rouges sont apparues sur mon torse. Elles saignent. Est-ce que mon lymphome évolue ?", source:"demo", traite:false },
+  { id:"M005", email_expediteur:"laura.petit@email.com",    date_reception:"2026-05-29T11:20:00", sujet:"Demande de rendez-vous",                   corps:"Bonjour, je souhaiterais prendre rendez-vous. Rien d'urgent, juste un contrôle de routine.", source:"demo", traite:false },
+];
+
+// ════════════════════════════════════════════════════════════════
+// Règles de classification
+// ════════════════════════════════════════════════════════════════
+const REGLES = [
+  { id:"annulation",       label:"Annulation de rendez-vous",              classe:"urgent",    tests:[/annul/i] },
+  { id:"peau-blanche-nez", label:"Peau blanche à côté du nez",            classe:"urgent",    tests:[/peau\s+blanche.{0,30}nez/i,/blanc.{0,20}nez/i] },
+  { id:"boutons-persist",  label:"Bouton(s) persistant(s)",                classe:"urgent",    tests:[/boutons?\s+persist/i,/persist.{0,20}bouton/i] },
+  { id:"plaie-croute",     label:"Plaie avec croûtes persistantes",        classe:"urgent",    tests:[/plaie.{0,40}cro[uû]te/i,/cro[uû]te.{0,40}persist/i] },
+  { id:"kyste-grossit",    label:"Kyste qui grossit",                      classe:"urgent",    tests:[/kyste.{0,30}(grossi|augment|grand)/i] },
+  { id:"grossit",          label:"Quelque chose qui grossit",              classe:"urgent",    tests:[/grossi(t|r)/i,/s.agrandit/i,/grandit/i] },
+  { id:"suite-traitement", label:"Suite de traitement / consultation passée", classe:"urgent", tests:[/suite\s+[àa]\s+(ma|la|mon|votre)\s+(consultation|rdv|rendez)/i,/je\s+vous\s+ai\s+vu\s+en\s+consultation/i,/vous\s+m.avez\s+(vu|reçu|examin)/i,/lors\s+de\s+(ma|notre|votre)\s+(derni[eè]re?\s+)?(consultation|visite|rdv)/i] },
+  { id:"biotherapie",      label:"Contrôle cutané sous biothérapie",       classe:"moyen",     tests:[/bioth[eé]rapie/i] },
+  { id:"grain-beaute",     label:"Grain de beauté suspect / nouveau",      classe:"moyen",     tests:[/grains?\s+de\s+beaut[eé]/i,/n[ae]vus/i] },
+  { id:"rougeur-oeil",     label:"Rougeur sous l'œil",                     classe:"moyen",     tests:[/rougeur.{0,20}(sous|autour|pr[eè]s).{0,10}([oô]eil|yeux)/i] },
+  { id:"plaque",           label:"Plaque cutanée",                         classe:"moyen",     tests:[/plaques?/i] },
+  { id:"ordonnance",       label:"Demande d'ordonnance / renouvellement",  classe:"moyen",     tests:[/ordonnance/i,/renouvellement/i,/prescription/i] },
+  { id:"acne",             label:"Acné",                                   classe:"pasurgent", tests:[/acn[eé]/i] },
+  { id:"verrues",          label:"Verrues",                                classe:"pasurgent", tests:[/verrues?/i] },
+  { id:"controle-cutane",  label:"Contrôle cutané / bilan de routine",     classe:"pasurgent", tests:[/contr[oô]le\s+cutan[eé]/i,/bilan\s+(cutan[eé]|g[eé]n[eé]ral|de\s+routine)/i,/contr[oô]le\s+de\s+routine/i] },
+  { id:"rdv-sans-prec",    label:"Rendez-vous sans précision",             classe:"pasurgent", tests:[/rendez-vous/i,/rendez\s+vous/i,/prendre\s+(un\s+)?rdv/i] },
+  { id:"controle",         label:"Contrôle général",                       classe:"pasurgent", tests:[/contr[oô]le/i,/suivi\s+r[eé]gulier/i] },
+  { id:"photo",            label:"Envoi de photo",                         classe:"inconnu",   tests:[/photo/i] },
+  { id:"bouton-simple",    label:"Bouton sans précision",                  classe:"inconnu",   tests:[/\bboutons?\b/i] },
+];
+
+const CLASSE_META = {
+  urgent:    { emoji:"🔴", label:"URGENT",       sectionLabel:"🔴 Urgent — À traiter en priorité" },
+  moyen:     { emoji:"🟠", label:"MOYEN URGENT",  sectionLabel:"🟠 Moyen urgent — Dans la journée" },
+  pasurgent: { emoji:"🟢", label:"PAS URGENT",    sectionLabel:"🟢 Pas urgent — Routine" },
+  inconnu:   { emoji:"⚪", label:"?",             sectionLabel:"⚪ Non classifié — À qualifier manuellement" },
+};
+const ORDRE = ["urgent","moyen","pasurgent","inconnu"];
+
+function classerMail(mail) {
+  const txt = (mail.sujet||"") + " " + (mail.corps||"");
+  for (const r of REGLES) {
+    for (const re of r.tests) {
+      if (re.test(txt)) return { classe:r.classe, regle_label:r.label };
+    }
+  }
+  return { classe:"inconnu", regle_label:"Aucun pattern reconnu" };
+}
+
+// ════════════════════════════════════════════════════════════════
+// Supabase — chargement & sauvegarde
+// ════════════════════════════════════════════════════════════════
+async function loadPatients() {
+  if (!sb) return;
+  const { data, error } = await sb.from("patients").select("*").order("nom");
+  if (!error && data) PATIENTS = data;
+}
+
+async function loadMails() {
+  if (!sb) { MAILS = [...DEMO_MAILS]; return; }
+  const { data, error } = await sb.from("mails").select("*").order("date_reception", { ascending:false }).limit(100);
+  if (!error && data && data.length > 0) {
+    MAILS = data;
+  } else {
+    // Premier lancement : insérer les démos
+    MAILS = [...DEMO_MAILS];
+    await sb.from("mails").upsert(MAILS.map(m => ({
+      ...m,
+      patient_id: getPatientByEmail(m.email_expediteur)?.id || null
+    })));
+  }
+}
+
+async function saveMail(mail) {
+  if (!sb) { MAILS.unshift(mail); return; }
+  const { error } = await sb.from("mails").upsert({
+    id: mail.id,
+    email_expediteur: mail.email_expediteur,
+    nom_expediteur:   mail.nom_expediteur || null,
+    date_reception:   mail.date_reception,
+    sujet:            mail.sujet,
+    corps:            mail.corps,
+    classe:           mail.classe,
+    regle_label:      mail.regle_label,
+    source:           mail.source,
+    gmail_id:         mail.gmail_id || null,
+    patient_id:       getPatientByEmail(mail.email_expediteur)?.id || null,
+    traite:           false,
+  });
+  if (!error) MAILS.unshift(mail);
+}
+
+async function toggleTraite(mailId, current) {
+  const val = !current;
+  if (sb) await sb.from("mails").update({ traite: val }).eq("id", mailId);
+  const m = MAILS.find(x => x.id === mailId);
+  if (m) m.traite = val;
+  render();
+}
+
+function getPatientByEmail(email) {
+  return PATIENTS.find(p => p.email?.toLowerCase() === email?.toLowerCase()) || null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// Gmail OAuth
+// ════════════════════════════════════════════════════════════════
+let accessToken = null;
+let tokenClient = null;
+
+function initGoogleAuth() {
+  if (!GMAIL_CLIENT_ID || typeof google === "undefined") return;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GMAIL_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    callback: async (resp) => {
+      if (resp.error) { showToast("Erreur auth : " + resp.error); return; }
+      accessToken = resp.access_token;
+      setGmailConnected(true);
+      await syncGmail();
+    },
+  });
+}
+
+function handleGmailAuth() {
+  if (!GMAIL_CLIENT_ID) { showSetup(); return; }
+  if (accessToken) {
+    if (!confirm("Déconnecter Gmail ?")) return;
+    google.accounts.oauth2.revoke(accessToken, () => {});
+    accessToken = null;
+    setGmailConnected(false);
+    MAILS = MAILS.filter(m => m.source !== "gmail");
+    render();
+    return;
+  }
+  if (!tokenClient) initGoogleAuth();
+  if (tokenClient) tokenClient.requestAccessToken({ prompt:"" });
+  else showToast("Google Identity Services pas encore chargé, réessayez.");
+}
+
+function setGmailConnected(on) {
+  document.getElementById("gmailDot").className   = "gmail-dot" + (on?" on":"");
+  document.getElementById("btnGmailLabel").textContent = on ? "Gmail connecté" : "Connecter Gmail";
+  document.getElementById("btnGmail").className   = "btn-gmail" + (on?" connected":"");
+}
+
+// ════════════════════════════════════════════════════════════════
+// Sync Gmail
+// ════════════════════════════════════════════════════════════════
+async function gmailFetch(url) {
+  const r = await fetch(url, { headers:{ Authorization:"Bearer "+accessToken } });
+  if (!r.ok) { const e=await r.json(); throw new Error(e.error?.message||r.status); }
+  return r.json();
+}
+
+function b64(s) {
+  try { return decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/")))); }
+  catch { return atob(s.replace(/-/g,"+").replace(/_/g,"/")); }
+}
+
+function extractBody(payload) {
+  if (!payload) return "";
+  const scan = (parts) => {
+    if (!parts) return null;
+    for (const p of parts) {
+      if (p.mimeType==="text/plain" && p.body?.data) return b64(p.body.data);
+      if (p.parts) { const r=scan(p.parts); if (r) return r; }
+    }
+    return null;
+  };
+  if (payload.mimeType==="text/plain" && payload.body?.data) return b64(payload.body.data);
+  return scan(payload.parts) || "";
+}
+
+function hdr(headers, name) {
+  return (headers.find(h=>h.name.toLowerCase()===name.toLowerCase())||{}).value||"";
+}
+
+async function syncGmail() {
+  if (!accessToken) return;
+  setSyncBar(true,"Récupération des mails Gmail…");
+  try {
+    const list = await gmailFetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&labelIds=INBOX&q=is:unread"
+    );
+    if (!list.messages?.length) {
+      setSyncBar(false);
+      showToast("Aucun mail non lu.",3000,"#276749");
+      render(); return;
+    }
+    setSyncBar(true, `Lecture de ${list.messages.length} message(s)…`);
+    MAILS = MAILS.filter(m => m.source !== "gmail");
+
+    const details = await Promise.all(
+      list.messages.map(m =>
+        gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`)
+      )
+    );
+
+    const nouveaux = [];
+    for (const msg of details) {
+      const headers = msg.payload?.headers||[];
+      const from    = hdr(headers,"From");
+      const emailMatch = from.match(/<(.+?)>/) || from.match(/(\S+@\S+)/);
+      const emailExp   = emailMatch ? emailMatch[1].toLowerCase() : from.trim().toLowerCase();
+      const sujet   = hdr(headers,"Subject")||"(sans objet)";
+      const date    = hdr(headers,"Date");
+      const corps   = extractBody(msg.payload).substring(0,2000);
+      const { classe, regle_label } = classerMail({ sujet, corps });
+
+      const mail = {
+        id:               "G"+msg.id,
+        email_expediteur:  emailExp,
+        nom_expediteur:    from.replace(/<.+>/,"").trim().replace(/"/g,"")||emailExp,
+        date_reception:    date ? new Date(date).toISOString() : new Date().toISOString(),
+        sujet, corps, classe, regle_label,
+        source:"gmail", gmail_id:msg.id, traite:false,
+      };
+      MAILS.unshift(mail);
+      nouveaux.push(mail);
+    }
+
+    // Sauvegarder dans Supabase
+    if (sb && nouveaux.length) {
+      await sb.from("mails").upsert(nouveaux.map(m => ({
+        ...m,
+        patient_id: getPatientByEmail(m.email_expediteur)?.id || null,
+      })));
+    }
+
+    setSyncBar(false);
+    render();
+    showToast(`${details.length} mail(s) synchronisé(s)`,3000,"#276749");
+  } catch(err) {
+    setSyncBar(false);
+    if (err.message.includes("401")) {
+      accessToken=null; setGmailConnected(false);
+      showToast("Session expirée, veuillez vous reconnecter.");
+    } else { showToast("Erreur Gmail : "+err.message); }
+  }
+}
+
+function setSyncBar(v,msg) {
+  document.getElementById("syncBar").className = "sync-bar"+(v?" visible":"");
+  if (msg) document.getElementById("syncMsg").textContent = msg;
+}
+
+// ════════════════════════════════════════════════════════════════
+// Rendu
+// ════════════════════════════════════════════════════════════════
+function fmtDate(iso) {
+  try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+  catch { return iso; }
+}
+
+function classerTous() {
+  const pMap = Object.fromEntries(PATIENTS.map(p => [p.email?.toLowerCase(), p]));
+  return MAILS.map(m => {
+    const { classe, regle_label } = m.classe
+      ? { classe:m.classe, regle_label:m.regle_label }
+      : classerMail(m);
+    return { mail:m, patient:pMap[m.email_expediteur?.toLowerCase()]||null, classe, regle_label };
+  });
+}
+
+function renderCard(item, idx) {
+  const { mail, patient, classe, regle_label } = item;
+  const meta = CLASSE_META[classe];
+  const nom  = patient ? `${patient.prenom} ${patient.nom}` : (mail.nom_expediteur||mail.email_expediteur);
+  const pid  = patient ? `(${patient.id})` : "";
+  const srcLabel = { gmail:"📧 Gmail", demo:"📝 Démo", manuel:"📝 Manuel" }[mail.source]||mail.source;
+  const antec = patient?.antecedents?.length
+    ? (Array.isArray(patient.antecedents)?patient.antecedents:JSON.parse(patient.antecedents)).map(a=>`<span class="tag">${a}</span>`).join("")
+    : `<span style="color:#a0aec0;font-size:0.78rem">Aucun antécédent</span>`;
+
+  return `
+  <div class="mail-card ${classe}${mail.traite?" traite":""}" id="card-${mail.id}">
+    <div class="card-header" onclick="toggle('${mail.id}')">
+      <span class="rank">#${String(idx+1).padStart(2,"0")}</span>
+      <div class="card-main">
+        <div class="card-top">
+          <span class="niveau-badge ${classe}">${meta.emoji} ${meta.label}</span>
+          <span class="patient-name">${nom}</span>
+          <span class="patient-id">${pid}</span>
+          <span class="src-badge">${srcLabel}</span>
+          <span class="mail-time">${fmtDate(mail.date_reception)}</span>
+        </div>
+        <div class="mail-sujet">📨 ${mail.sujet||"(sans objet)"}</div>
+        <div><span class="pattern-match">🔍 ${regle_label}</span>${mail.traite?` <span style="font-size:.68rem;color:#276749;margin-left:6px">✓ Traité</span>`:""}</div>
+      </div>
+      <span class="expand-icon">▼</span>
+    </div>
+    <div class="card-detail">
+      <div class="detail-sep"></div>
+      <div class="detail-grid">
+        <div class="detail-box">
+          <h4>🏥 Dossier patient</h4>
+          ${patient?`
+            <p><strong>Risque :</strong> ${patient.risque}</p>
+            <p style="margin-top:5px"><strong>Antécédents :</strong></p>
+            <p style="margin-top:3px">${antec}</p>
+            ${patient.traitement_en_cours?`<p style="margin-top:5px"><strong>Traitement :</strong> ${patient.traitement_en_cours}</p>`:""}
+            ${patient.prochain_rdv?`<p style="margin-top:4px"><strong>Prochain RDV :</strong> ${patient.prochain_rdv}</p>`:""}
+          `:`<p style="color:#a0aec0">Expéditeur non enregistré</p><p style="font-size:.77rem;color:#718096;margin-top:4px">${mail.email_expediteur}</p>`}
+        </div>
+        <div class="detail-box">
+          <h4>📋 Classification</h4>
+          <p><strong>Niveau :</strong> <span class="rule-hit ${classe}">${meta.label}</span></p>
+          <p style="margin-top:5px"><strong>Règle :</strong> ${regle_label}</p>
+          <p style="margin-top:5px"><strong>Reçu :</strong> ${fmtDate(mail.date_reception)}</p>
+        </div>
+      </div>
+      <div class="mail-body-box">
+        <h4>✉️ Contenu du message</h4>${mail.corps||"(corps vide)"}
+      </div>
+      <button class="btn-traite${mail.traite?" done":""}" onclick="toggleTraite('${mail.id}',${!!mail.traite})">
+        ${mail.traite?"✓ Marqué comme traité — Cliquez pour annuler":"Marquer comme traité"}
+      </button>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const tous = classerTous();
+  const stats = { urgent:0,moyen:0,pasurgent:0,inconnu:0 };
+  tous.forEach(t => stats[t.classe]++);
+
+  document.getElementById("statsBar").innerHTML = `
+    <span class="stat-chip urgent">🔴 Urgent : ${stats.urgent}</span>
+    <span class="stat-chip moyen">🟠 Moyen urgent : ${stats.moyen}</span>
+    <span class="stat-chip pasurgent">🟢 Pas urgent : ${stats.pasurgent}</span>
+    <span class="stat-chip inconnu">⚪ ? : ${stats.inconnu}</span>
+    <span class="stat-label">${tous.length} message${tous.length>1?"s":""}</span>
+    <button class="icon-btn" onclick="toggleLegend()">📋 Règles</button>
+  `;
+
+  const groupes = { urgent:[],moyen:[],pasurgent:[],inconnu:[] };
+  tous.forEach(item => groupes[item.classe].push(item));
+
+  let idx=0, html="";
+  for (const cls of ORDRE) {
+    if (!groupes[cls].length) continue;
+    html += `<div class="section-title">${CLASSE_META[cls].sectionLabel}</div>`;
+    for (const item of groupes[cls]) html += renderCard(item, idx++);
+  }
+  if (!html) html = `<div class="empty">Aucun mail à traiter.</div>`;
+
+  const lp = document.getElementById("legendPanel") || buildLegend();
+  document.getElementById("main").innerHTML = html;
+  document.getElementById("main").prepend(lp);
+}
+
+function buildLegend() {
+  const div = document.createElement("div");
+  div.className="legend-panel"; div.id="legendPanel";
+  div.innerHTML = `<table>${REGLES.map(r=>`<tr><td>${r.label}</td><td><span class="rule-hit ${r.classe}">${CLASSE_META[r.classe].label}</span></td></tr>`).join("")}</table>`;
+  return div;
+}
+function toggleLegend() { document.getElementById("legendPanel")?.classList.toggle("open"); }
+function toggle(id) { document.getElementById("card-"+id)?.classList.toggle("open"); }
+
+// ════════════════════════════════════════════════════════════════
+// Setup (si pas de config)
+// ════════════════════════════════════════════════════════════════
+function showSetup() {
+  document.getElementById("main").innerHTML = `
+    <div class="setup-banner">
+      <h2>⚙️ Configuration initiale</h2>
+      <p>Renseignez vos identifiants Supabase et Google pour activer toutes les fonctionnalités.<br>Ces valeurs sont sauvegardées dans votre navigateur.</p>
+      <ol class="setup-steps">
+        <li><span class="step-num">1</span><div><strong>Supabase URL</strong> — trouvée dans Project Settings → API → Project URL</div></li>
+        <li><span class="step-num">2</span><div><strong>Supabase Anon Key</strong> — trouvée dans Project Settings → API → anon public</div></li>
+        <li><span class="step-num">3</span><div><strong>Gmail Client ID</strong> — créé sur <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> (voir tutoriel)</div></li>
+      </ol>
+      <div class="field-row"><input id="cfgUrl"  placeholder="https://xxxx.supabase.co" /></div>
+      <div class="field-row"><input id="cfgKey"  placeholder="eyJhbGci… (anon key)" /></div>
+      <div class="field-row"><input id="cfgGid"  placeholder="XXXXX.apps.googleusercontent.com" /></div>
+      <div class="field-row" style="justify-content:center">
+        <button class="btn-primary" onclick="saveConfig()">Enregistrer & Recharger</button>
+      </div>
+    </div>`;
+}
+
+function saveConfig() {
+  const url = document.getElementById("cfgUrl")?.value.trim();
+  const key = document.getElementById("cfgKey")?.value.trim();
+  const gid = document.getElementById("cfgGid")?.value.trim();
+  if (url) localStorage.setItem("tp_supabaseUrl",   url);
+  if (key) localStorage.setItem("tp_supabaseKey",   key);
+  if (gid) localStorage.setItem("tp_gmailClientId", gid);
+  location.reload();
+}
+
+// ════════════════════════════════════════════════════════════════
+// Modal ajout manuel
+// ════════════════════════════════════════════════════════════════
+function populateSelect() {
+  const sel = document.getElementById("selectPatient");
+  sel.innerHTML = `<option value="">— Patient —</option>`;
+  PATIENTS.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p.email; o.textContent = `${p.prenom} ${p.nom} (${p.id})`;
+    sel.appendChild(o);
+  });
+}
+function openModal()  { populateSelect(); document.getElementById("modalOverlay").classList.add("open"); }
+function closeModal() { document.getElementById("modalOverlay").classList.remove("open"); }
+function closeModalIfOutside(e) { if (e.target===document.getElementById("modalOverlay")) closeModal(); }
+
+async function ajouterMail() {
+  const email = document.getElementById("selectPatient").value;
+  const sujet = document.getElementById("inSujet").value.trim();
+  const corps = document.getElementById("inCorps").value.trim();
+  if (!email||!sujet||!corps) { alert("Remplissez tous les champs."); return; }
+  const { classe, regle_label } = classerMail({ sujet, corps });
+  const mail = {
+    id: "M"+Date.now(), email_expediteur:email,
+    date_reception: new Date().toISOString(),
+    sujet, corps, classe, regle_label, source:"manuel", traite:false,
+  };
+  await saveMail(mail);
+  document.getElementById("inSujet").value="";
+  document.getElementById("inCorps").value="";
+  closeModal(); render();
+}
+
+// ════════════════════════════════════════════════════════════════
+// UI helpers
+// ════════════════════════════════════════════════════════════════
+function showToast(msg, delay=4000, bg="#c53030") {
+  const t = document.getElementById("toast");
+  t.textContent=msg; t.style.background=bg; t.className="toast visible";
+  setTimeout(()=>t.className="toast", delay);
+}
+
+function updateClock() {
+  const n = new Date();
+  document.getElementById("clock").textContent =
+    n.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})+"  ·  "+n.toLocaleTimeString("fr-FR");
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// ════════════════════════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════════════════════════
+window.addEventListener("load", async () => {
+  if (!SUPABASE_URL || !SUPABASE_KEY || !GMAIL_CLIENT_ID) {
+    // Afficher quand même l'app en mode démo, setup accessible via bouton Gmail
+    PATIENTS = [
+      { id:"P001",nom:"Martin",prenom:"Sophie",email:"sophie.martin@email.com",antecedents:["mélanome stade I (2022)","carcinome basocellulaire (2019)"],traitement_en_cours:"surveillance trimestrielle",dernier_rdv:"2026-02-15",prochain_rdv:"2026-06-10",risque:"élevé" },
+      { id:"P002",nom:"Dubois",prenom:"Jean",email:"jean.dubois@email.com",antecedents:["eczéma chronique","psoriasis modéré"],traitement_en_cours:"méthotrexate 15mg/semaine",dernier_rdv:"2026-04-01",prochain_rdv:"2026-07-01",risque:"modéré" },
+      { id:"P003",nom:"Leroy",prenom:"Emma",email:"emma.leroy@email.com",antecedents:["acné sévère"],traitement_en_cours:"isotrétinoïne 20mg/j",dernier_rdv:"2026-05-01",prochain_rdv:"2026-06-15",risque:"faible" },
+      { id:"P004",nom:"Bernard",prenom:"Michel",email:"michel.bernard@email.com",antecedents:["lymphome cutané T (2024)","diabète type 2"],traitement_en_cours:"photothérapie UVB + corticoïdes locaux",dernier_rdv:"2026-05-20",prochain_rdv:"2026-06-03",risque:"très élevé" },
+      { id:"P005",nom:"Petit",prenom:"Laura",email:"laura.petit@email.com",antecedents:[],traitement_en_cours:null,dernier_rdv:"2026-01-10",prochain_rdv:null,risque:"faible" },
+    ];
+    MAILS = [...DEMO_MAILS];
+    render();
+    return;
+  }
+
+  await Promise.all([loadPatients(), loadMails()]);
+  render();
+
+  // Init Google Auth après chargement du script GSI
+  const waitGSI = setInterval(() => {
+    if (typeof google !== "undefined") { clearInterval(waitGSI); initGoogleAuth(); }
+  }, 200);
+});
+</script>
+</body>
+</html>

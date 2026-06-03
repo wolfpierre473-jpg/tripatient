@@ -1,0 +1,37 @@
+[
+  {
+    "id": "M001",
+    "emailExpediteur": "sophie.martin@email.com",
+    "dateReception": "2026-05-29T08:15:00",
+    "sujet": "Tache suspecte apparue rapidement",
+    "corps": "Bonjour docteur, depuis 3 jours j'ai remarqué une nouvelle tache foncée sur mon dos qui a l'air de grandir. Elle est asymétrique et les bords sont irréguliers. Étant donné mes antécédents je suis très inquiète. Pouvez-vous me recevoir rapidement ?"
+  },
+  {
+    "id": "M002",
+    "emailExpediteur": "jean.dubois@email.com",
+    "dateReception": "2026-05-29T09:30:00",
+    "sujet": "Renouvellement ordonnance",
+    "corps": "Bonjour, je contacte votre cabinet car mon ordonnance de méthotrexate arrive à expiration la semaine prochaine. Pourriez-vous me faire un renouvellement ? Mon état est stable, pas de poussée depuis 2 mois."
+  },
+  {
+    "id": "M003",
+    "emailExpediteur": "emma.leroy@email.com",
+    "dateReception": "2026-05-29T10:00:00",
+    "sujet": "Effets secondaires traitement",
+    "corps": "Docteur, depuis que j'ai commencé l'isotrétinoïne il y a 3 semaines, j'ai les lèvres très sèches et des maux de tête quotidiens. La sécheresse cutanée est intense. Est-ce normal ?"
+  },
+  {
+    "id": "M004",
+    "emailExpediteur": "michel.bernard@email.com",
+    "dateReception": "2026-05-29T07:45:00",
+    "sujet": "URGENT - Apparition de nouvelles lésions",
+    "corps": "Docteur, je suis très inquiet. Depuis hier soir de nouvelles plaques rouges sont apparues sur mon torse et mes bras. Elles démangent énormément et certaines saignent. Je suis sous photothérapie depuis 2 mois. Est-ce que mon lymphome évolue ? Que dois-je faire ?"
+  },
+  {
+    "id": "M005",
+    "emailExpediteur": "laura.petit@email.com",
+    "dateReception": "2026-05-29T11:20:00",
+    "sujet": "Demande de rendez-vous",
+    "corps": "Bonjour, je souhaiterais prendre rendez-vous pour un bilan cutané général. Rien d'urgent, juste un contrôle de routine. Quelles sont vos disponibilités ?"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "P001",
+    "nom": "Martin",
+    "prenom": "Sophie",
+    "dateNaissance": "1978-03-12",
+    "email": "sophie.martin@email.com",
+    "antecedents": ["mélanome stade I (2022)", "carcinome basocellulaire (2019)"],
+    "traitementEnCours": "surveillance trimestrielle",
+    "dernierRDV": "2026-02-15",
+    "prochainRDV": "2026-06-10",
+    "risque": "élevé"
+  },
+  {
+    "id": "P002",
+    "nom": "Dubois",
+    "prenom": "Jean",
+    "dateNaissance": "1955-07-22",
+    "email": "jean.dubois@email.com",
+    "antecedents": ["eczéma chronique", "psoriasis modéré"],
+    "traitementEnCours": "méthotrexate 15mg/semaine",
+    "dernierRDV": "2026-04-01",
+    "prochainRDV": "2026-07-01",
+    "risque": "modéré"
+  },
+  {
+    "id": "P003",
+    "nom": "Leroy",
+    "prenom": "Emma",
+    "dateNaissance": "1995-11-05",
+    "email": "emma.leroy@email.com",
+    "antecedents": ["acné sévère"],
+    "traitementEnCours": "isotrétinoïne 20mg/j",
+    "dernierRDV": "2026-05-01",
+    "prochainRDV": "2026-06-15",
+    "risque": "faible"
+  },
+  {
+    "id": "P004",
+    "nom": "Bernard",
+    "prenom": "Michel",
+    "dateNaissance": "1948-01-30",
+    "email": "michel.bernard@email.com",
+    "antecedents": ["lymphome cutané T (2024)", "diabète type 2"],
+    "traitementEnCours": "photothérapie UVB + corticoïdes locaux",
+    "dernierRDV": "2026-05-20",
+    "prochainRDV": "2026-06-03",
+    "risque": "très élevé"
+  },
+  {
+    "id": "P005",
+    "nom": "Petit",
+    "prenom": "Laura",
+    "dateNaissance": "2001-08-18",
+    "email": "laura.petit@email.com",
+    "antecedents": [],
+    "traitementEnCours": null,
+    "dernierRDV": "2026-01-10",
+    "prochainRDV": null,
+    "risque": "faible"
+  }
+]

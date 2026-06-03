@@ -1,0 +1,11 @@
+{
+  "name": "tripatient",
+  "version": "1.0.0",
+  "description": "Système de classification des mails patients pour dermatologues",
+  "main": "classifier.js",
+  "scripts": {
+    "start": "node classifier.js",
+    "add-mail": "node cli.js add-mail",
+    "add-patient": "node cli.js add-patient"
+  }
+}
