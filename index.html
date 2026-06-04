@@ -192,23 +192,11 @@
 
 <script>
 // ════════════════════════════════════════════════════════════════
-// CONFIG — rempli automatiquement par Vercel (env vars) ou localStorage
+// CONFIG — lue depuis localStorage (saisie 1 seule fois par l'utilisateur)
 // ════════════════════════════════════════════════════════════════
-const ENV = {
-  supabaseUrl:  "%%SUPABASE_URL%%",           // remplacé au build OU via localStorage
-  supabaseKey:  "%%SUPABASE_ANON_KEY%%",      // remplacé au build OU via localStorage
-  gmailClientId:"%%GMAIL_CLIENT_ID%%",        // remplacé au build OU via localStorage
-};
-
-// Fallback localStorage (pour dev local ou si les variables ne sont pas injectées)
-function cfg(key, envVal) {
-  if (envVal && !envVal.startsWith("%%")) return envVal;
-  return localStorage.getItem("tp_" + key) || "";
-}
-
-const SUPABASE_URL   = cfg("supabaseUrl",   ENV.supabaseUrl);
-const SUPABASE_KEY   = cfg("supabaseKey",   ENV.supabaseKey);
-const GMAIL_CLIENT_ID= cfg("gmailClientId", ENV.gmailClientId);
+const SUPABASE_URL    = localStorage.getItem("tp_supabaseUrl")   || "";
+const SUPABASE_KEY    = localStorage.getItem("tp_supabaseKey")   || "";
+const GMAIL_CLIENT_ID = localStorage.getItem("tp_gmailClientId") || "";
 
 // ── Supabase client ──────────────────────────────────────────
 let sb = null;
@@ -407,7 +395,7 @@ async function syncGmail() {
   setSyncBar(true,"Récupération des mails Gmail…");
   try {
     const list = await gmailFetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&labelIds=INBOX&q=is:unread"
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&labelIds=INBOX&q=is:unread"
     );
     if (!list.messages?.length) {
       setSyncBar(false);
