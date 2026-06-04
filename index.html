@@ -395,7 +395,7 @@ async function syncGmail() {
   setSyncBar(true,"Récupération des mails Gmail…");
   try {
     const list = await gmailFetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&labelIds=INBOX&q=is:unread"
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&labelIds=INBOX&q=is:unread newer_than:7d"
     );
     if (!list.messages?.length) {
       setSyncBar(false);
