@@ -29,6 +29,7 @@
     .stat-chip.moyen     { background:#fffaf0; color:#c05621; border:1px solid #feebc8; }
     .stat-chip.pasurgent { background:#f0fff4; color:#276749; border:1px solid #c6f6d5; }
     .stat-chip.inconnu   { background:#f7fafc; color:#718096; border:1px solid #e2e8f0; }
+    .stat-chip.autre     { background:#edf2f7; color:#4a5568; border:1px solid #cbd5e0; }
     .stat-label { font-size:0.76rem; color:#718096; margin-left:auto; }
     .icon-btn { background:none; border:1px solid #e2e8f0; border-radius:7px; padding:3px 10px; font-size:0.74rem; color:#718096; cursor:pointer; }
     .icon-btn:hover { background:#f7fafc; }
@@ -76,6 +77,7 @@
     .mail-card.moyen     { border-color:#f6ad55; }
     .mail-card.pasurgent { border-color:#68d391; }
     .mail-card.inconnu   { border-color:#cbd5e0; }
+    .mail-card.autre     { border-color:#a0aec0; }
     .mail-card.traite    { opacity:.55; }
 
     .card-header { padding:12px 15px 10px; display:flex; align-items:flex-start; gap:11px; cursor:pointer; user-select:none; }
@@ -85,6 +87,7 @@
     .niveau-badge.moyen     { background:#fffaf0; color:#c05621; }
     .niveau-badge.pasurgent { background:#f0fff4; color:#276749; }
     .niveau-badge.inconnu   { background:#f7fafc; color:#718096; }
+    .niveau-badge.autre     { background:#edf2f7; color:#4a5568; }
 
     .card-main { flex:1; min-width:0; }
     .card-top  { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:3px; }
@@ -111,6 +114,7 @@
     .rule-hit.moyen     { color:#c05621; }
     .rule-hit.pasurgent { color:#276749; }
     .rule-hit.inconnu   { color:#718096; }
+    .rule-hit.autre     { color:#4a5568; }
     .mail-body-box { background:#f7fafc; border-radius:8px; padding:10px 13px; font-size:0.8rem; color:#4a5568; line-height:1.65; border-left:3px solid #e2e8f0; white-space:pre-wrap; word-break:break-word; }
     .mail-body-box h4 { font-size:0.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a0aec0; margin-bottom:6px; }
 
@@ -247,18 +251,67 @@ const CLASSE_META = {
   urgent:    { emoji:"🔴", label:"URGENT",       sectionLabel:"🔴 Urgent — À traiter en priorité" },
   moyen:     { emoji:"🟠", label:"MOYEN URGENT",  sectionLabel:"🟠 Moyen urgent — Dans la journée" },
   pasurgent: { emoji:"🟢", label:"PAS URGENT",    sectionLabel:"🟢 Pas urgent — Routine" },
-  inconnu:   { emoji:"⚪", label:"?",             sectionLabel:"⚪ Non classifié — À qualifier manuellement" },
+  inconnu:   { emoji:"⚪", label:"?",             sectionLabel:"⚪ Non classifié — Patient, cas à qualifier" },
+  autre:     { emoji:"📦", label:"AUTRE",        sectionLabel:"📦 Autre — Entreprises, pubs, non-patient" },
 };
-const ORDRE = ["urgent","moyen","pasurgent","inconnu"];
+const ORDRE = ["urgent","moyen","pasurgent","inconnu","autre"];
 
-function classerMail(mail) {
+// ── Détection des mails NON-patient (entreprises, pubs, notifications) ────────
+// Marqueurs dans l'adresse de l'expéditeur (avant le @ ou dans le domaine)
+const EXPEDITEUR_COMMERCIAL = [
+  /no[\-\.]?reply/i, /ne[\-\.]?pas[\-\.]?repondre/i, /nepasrepondre/i, /donotreply/i,
+  /newsletter/i, /notification/i, /\bnotif\b/i, /mailer/i, /mailing/i,
+  /marketing/i, /\bpromo/i, /\bnews@/i, /\binfo@/i, /\bcontact@/i, /\bhello@/i,
+  /support@/i, /service[\-\.]?client/i, /\bnoreply/i,
+];
+// Noms de domaines / entreprises connues (commerce, pub, réseaux, services)
+const DOMAINES_COMMERCIAL = [
+  /vinted/i, /laposte/i, /\bla poste\b/i, /colissimo/i, /chronopost/i, /mondialrelay/i,
+  /amazon/i, /cdiscount/i, /\bfnac\b/i, /darty/i, /leboncoin/i, /ebay/i, /aliexpress/i, /shein/i, /temu/i,
+  /paypal/i, /\bn26\b/i, /revolut/i, /\bboursorama/i, /\blcl\b/i, /creditmutuel/i, /banquepop/i,
+  /linkedin/i, /facebook/i, /instagram/i, /\btiktok/i, /\bx\.com/i, /twitter/i, /snapchat/i, /pinterest/i,
+  /booking/i, /airbnb/i, /\buber/i, /deliveroo/i, /ubereats/i, /justeat/i, /\bsncf/i, /\bratp\b/i, /blablacar/i,
+  /\bedf\b/i, /\bengie/i, /totalenergies/i, /\bfree\.fr/i, /orange\.fr/i, /\bsfr\b/i, /bouygues/i, /\bsosh/i,
+  /spotify/i, /netflix/i, /youtube/i, /\bapple\b/i, /microsoft/i, /\bgoogle\b/i, /paypal/i,
+  /doctolib/i, /\bameli/i, /\bcpam\b/i, /\bmaaf\b/i, /\baxa\b/i, /\ballianz/i, /matmut/i, /\bmma\b/i,
+  /aliexpress/i, /wish/i, /asos/i, /zalando/i, /zara/i, /\bh&m\b/i, /decathlon/i,
+];
+// Marqueurs commerciaux dans le corps du mail
+const CORPS_COMMERCIAL = [
+  /se\s+d[ée]sabonner/i, /se\s+d[ée]sinscrire/i, /unsubscribe/i, /ne\s+plus\s+recevoir/i,
+  /g[ée]rer\s+(vos|mes)\s+pr[ée]f[ée]rences/i, /vous\s+recevez\s+cet\s+e?mail/i,
+  /cet\s+e?mail\s+a\s+[ée]t[ée]\s+envoy[ée]/i, /pour\s+vous\s+d[ée]sinscrire/i,
+  /code\s+promo/i, /offre\s+exclusive/i, /offre\s+sp[ée]ciale/i, /\-\s*\d{1,2}\s*%/i,
+  /\bsoldes\b/i, /\bnewsletter\b/i, /votre\s+commande/i, /votre\s+colis/i, /suivi\s+de\s+(votre\s+)?colis/i,
+  /num[ée]ro\s+de\s+suivi/i, /votre\s+facture/i, /confirmation\s+de\s+commande/i,
+  /bon\s+de\s+r[ée]duction/i, /flash\s+sale/i, /black\s+friday/i, /vente\s+priv[ée]e/i,
+];
+
+function estCommercial(mail) {
+  const exped = ((mail.email_expediteur||"") + " " + (mail.nom_expediteur||"")).toLowerCase();
+  if (EXPEDITEUR_COMMERCIAL.some(re => re.test(exped))) return true;
+  if (DOMAINES_COMMERCIAL.some(re => re.test(exped))) return true;
+  const txt = (mail.sujet||"") + " " + (mail.corps||"");
+  if (CORPS_COMMERCIAL.some(re => re.test(txt))) return true;
+  return false;
+}
+
+// Classification.  isPatient = l'expéditeur est un patient enregistré.
+function classerMail(mail, isPatient=false) {
+  // 1) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
+  if (!isPatient && estCommercial(mail)) {
+    return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
+  }
+  // 2) Règles médicales (patient ou non)
   const txt = (mail.sujet||"") + " " + (mail.corps||"");
   for (const r of REGLES) {
     for (const re of r.tests) {
       if (re.test(txt)) return { classe:r.classe, regle_label:r.label };
     }
   }
-  return { classe:"inconnu", regle_label:"Aucun pattern reconnu" };
+  // 3) Aucun pattern reconnu
+  if (isPatient) return { classe:"inconnu", regle_label:"Patient — cas non répertorié" };
+  return { classe:"autre", regle_label:"Expéditeur inconnu / non-patient" };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -448,12 +501,17 @@ async function syncGmail() {
       const sujet   = hdr(headers,"Subject")||"(sans objet)";
       const date    = hdr(headers,"Date");
       const corps   = extractBody(msg.payload).substring(0,2000);
-      const { classe, regle_label } = classerMail({ sujet, corps });
+      const nomExp  = from.replace(/<.+>/,"").trim().replace(/"/g,"")||emailExp;
+      const estPatient = !!getPatientByEmail(emailExp);
+      const { classe, regle_label } = classerMail(
+        { sujet, corps, email_expediteur:emailExp, nom_expediteur:nomExp },
+        estPatient
+      );
 
       const mail = {
         id:               "G"+msg.id,
         email_expediteur:  emailExp,
-        nom_expediteur:    from.replace(/<.+>/,"").trim().replace(/"/g,"")||emailExp,
+        nom_expediteur:    nomExp,
         date_reception:    date ? new Date(date).toISOString() : new Date().toISOString(),
         sujet, corps, classe, regle_label,
         source:"gmail", gmail_id:msg.id, traite:false,
@@ -498,10 +556,11 @@ function fmtDate(iso) {
 function classerTous() {
   const pMap = Object.fromEntries(PATIENTS.map(p => [p.email?.toLowerCase(), p]));
   return MAILS.map(m => {
+    const patient = pMap[m.email_expediteur?.toLowerCase()] || null;
     const { classe, regle_label } = m.classe
       ? { classe:m.classe, regle_label:m.regle_label }
-      : classerMail(m);
-    return { mail:m, patient:pMap[m.email_expediteur?.toLowerCase()]||null, classe, regle_label };
+      : classerMail(m, !!patient);
+    return { mail:m, patient, classe, regle_label };
   });
 }
 
@@ -564,7 +623,7 @@ function renderCard(item, idx) {
 
 function render() {
   const tous = classerTous();
-  const stats = { urgent:0,moyen:0,pasurgent:0,inconnu:0 };
+  const stats = { urgent:0,moyen:0,pasurgent:0,inconnu:0,autre:0 };
   tous.forEach(t => stats[t.classe]++);
 
   document.getElementById("statsBar").innerHTML = `
@@ -572,11 +631,12 @@ function render() {
     <span class="stat-chip moyen">🟠 Moyen urgent : ${stats.moyen}</span>
     <span class="stat-chip pasurgent">🟢 Pas urgent : ${stats.pasurgent}</span>
     <span class="stat-chip inconnu">⚪ ? : ${stats.inconnu}</span>
+    <span class="stat-chip autre">📦 Autre : ${stats.autre}</span>
     <span class="stat-label">${tous.length} message${tous.length>1?"s":""}</span>
     <button class="icon-btn" onclick="toggleLegend()">📋 Règles</button>
   `;
 
-  const groupes = { urgent:[],moyen:[],pasurgent:[],inconnu:[] };
+  const groupes = { urgent:[],moyen:[],pasurgent:[],inconnu:[],autre:[] };
   tous.forEach(item => groupes[item.classe].push(item));
 
   let idx=0, html="";
@@ -654,7 +714,8 @@ async function ajouterMail() {
   const sujet = document.getElementById("inSujet").value.trim();
   const corps = document.getElementById("inCorps").value.trim();
   if (!email||!sujet||!corps) { alert("Remplissez tous les champs."); return; }
-  const { classe, regle_label } = classerMail({ sujet, corps });
+  // Ajout manuel = toujours un patient sélectionné dans la liste
+  const { classe, regle_label } = classerMail({ sujet, corps, email_expediteur:email }, true);
   const mail = {
     id: "M"+Date.now(), email_expediteur:email,
     date_reception: new Date().toISOString(),

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS mails (
   date_reception    TIMESTAMPTZ NOT NULL,
   sujet             TEXT,
   corps             TEXT,
-  classe            TEXT CHECK (classe IN ('urgent','moyen','pasurgent','inconnu')),
+  classe            TEXT CHECK (classe IN ('urgent','moyen','pasurgent','inconnu','autre')),
   regle_label       TEXT,
   source            TEXT CHECK (source IN ('gmail','demo','manuel')),
   gmail_id          TEXT UNIQUE,                   -- null si demo/manuel
