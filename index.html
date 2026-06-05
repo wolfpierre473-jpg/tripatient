@@ -118,9 +118,21 @@
     .mail-body-box { background:#f7fafc; border-radius:8px; padding:10px 13px; font-size:0.8rem; color:#4a5568; line-height:1.65; border-left:3px solid #e2e8f0; white-space:pre-wrap; word-break:break-word; }
     .mail-body-box h4 { font-size:0.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a0aec0; margin-bottom:6px; }
 
-    .btn-traite { background:#e2e8f0; color:#4a5568; border:none; border-radius:6px; padding:4px 12px; font-size:0.76rem; font-weight:600; cursor:pointer; margin-top:10px; }
+    .card-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+    .btn-traite { background:#e2e8f0; color:#4a5568; border:none; border-radius:6px; padding:5px 12px; font-size:0.76rem; font-weight:600; cursor:pointer; }
     .btn-traite:hover { background:#cbd5e0; }
     .btn-traite.done { background:#c6f6d5; color:#276749; }
+    .btn-reply { background:#2b6cb0; color:white; border:none; border-radius:6px; padding:5px 14px; font-size:0.76rem; font-weight:600; cursor:pointer; }
+    .btn-reply:hover { background:#2c5282; }
+
+    .reply-form { margin-top:10px; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:11px 12px; }
+    .reply-to { font-size:0.76rem; color:#718096; margin-bottom:6px; }
+    .reply-form textarea { width:100%; min-height:90px; resize:vertical; padding:8px 10px; border:1px solid #cbd5e0; border-radius:7px; font-size:0.84rem; font-family:inherit; }
+    .reply-form textarea:focus { outline:none; border-color:#2b6cb0; }
+    .reply-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+    .reply-actions .btn-ghost { padding:6px 14px; font-size:0.8rem; }
+    .reply-actions .btn-primary { padding:6px 16px; font-size:0.8rem; }
+    .reply-actions .btn-primary:disabled { opacity:.6; cursor:wait; }
 
     /* ── FAB ── */
     .fab { position:fixed; bottom:22px; right:22px; background:#2b6cb0; color:white; border:none; border-radius:50%; width:50px; height:50px; font-size:1.35rem; cursor:pointer; box-shadow:0 4px 16px rgba(43,108,176,.4); z-index:100; transition:.15s; }
@@ -379,7 +391,7 @@ function initGoogleAuth() {
   if (!GMAIL_CLIENT_ID || typeof google === "undefined") return;
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GMAIL_CLIENT_ID,
-    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
     callback: async (resp) => {
       if (resp.error) { showToast("Erreur auth : " + resp.error); return; }
       accessToken = resp.access_token;
@@ -421,6 +433,88 @@ async function gmailFetch(url) {
 }
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// POST authentifié vers l'API Gmail
+async function gmailPost(url, bodyObj) {
+  const r = await fetch(url, {
+    method:"POST",
+    headers:{ Authorization:"Bearer "+accessToken, "Content-Type":"application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+  if (!r.ok) { const e=await r.json().catch(()=>({})); const err=new Error(e.error?.message||r.status); err.status=r.status; throw err; }
+  return r.json();
+}
+
+// Encode un texte UTF-8 en base64 (pour sujet et corps MIME)
+function b64encodeUtf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+// Construit un message MIME (RFC 2822) de réponse, encodé en base64url pour l'API
+function buildRawReply({ to, subject, body, messageId }) {
+  const subjectEnc = "=?UTF-8?B?" + b64encodeUtf8(subject) + "?=";
+  const bodyB64    = b64encodeUtf8(body);
+  const lignes = [
+    `To: ${to}`,
+    `Subject: ${subjectEnc}`,
+    messageId ? `In-Reply-To: ${messageId}` : "",
+    messageId ? `References: ${messageId}` : "",
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    bodyB64,
+  ].filter(Boolean);
+  const raw = lignes.join("\r\n");
+  // base64url du message complet
+  return btoa(raw).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+
+// Envoie une réponse à un mail Gmail (dans le même fil de discussion)
+async function sendReply(mailId) {
+  const mail = MAILS.find(m => m.id === mailId);
+  if (!mail) return;
+  const zone = document.getElementById("replytext-"+mailId);
+  const texte = zone ? zone.value.trim() : "";
+  if (!texte) { showToast("Écrivez un message avant d'envoyer."); return; }
+  if (!accessToken) { showToast("Connectez Gmail d'abord."); return; }
+
+  const btn = document.getElementById("sendbtn-"+mailId);
+  if (btn) { btn.disabled = true; btn.textContent = "Envoi…"; }
+
+  try {
+    // Récupère les métadonnées du mail original (threadId + Message-ID) pour répondre dans le fil
+    const meta = await gmailFetchRetry(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.gmail_id}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`
+    );
+    const headers   = meta.payload?.headers || [];
+    const messageId = hdr(headers, "Message-ID");
+    let   subject   = hdr(headers, "Subject") || mail.sujet || "";
+    if (!/^re\s*:/i.test(subject)) subject = "Re: " + subject;
+
+    const raw = buildRawReply({ to: mail.email_expediteur, subject, body: texte, messageId });
+    await gmailPost("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      raw, threadId: meta.threadId,
+    });
+
+    showToast("Réponse envoyée ✅", 3000, "#276749");
+    cancelReply(mailId);
+    // Marque le mail comme traité automatiquement
+    if (!mail.traite) await toggleTraite(mailId, false);
+  } catch(e) {
+    showToast("Erreur d'envoi : " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Envoyer"; }
+  }
+}
+
+function openReply(mailId) {
+  const f = document.getElementById("replyform-"+mailId);
+  if (f) { f.style.display = "block"; document.getElementById("replytext-"+mailId)?.focus(); }
+}
+function cancelReply(mailId) {
+  const f = document.getElementById("replyform-"+mailId);
+  if (f) { f.style.display = "none"; const t=document.getElementById("replytext-"+mailId); if (t) t.value=""; }
+}
 
 // Réessaie automatiquement en cas de "too many requests" (429) ou erreur serveur (5xx)
 async function gmailFetchRetry(url, maxRetries=5) {
@@ -614,9 +708,24 @@ function renderCard(item, idx) {
       <div class="mail-body-box">
         <h4>✉️ Contenu du message</h4>${mail.corps||"(corps vide)"}
       </div>
-      <button class="btn-traite${mail.traite?" done":""}" onclick="toggleTraite('${mail.id}',${!!mail.traite})">
-        ${mail.traite?"✓ Marqué comme traité — Cliquez pour annuler":"Marquer comme traité"}
-      </button>
+      <div class="card-actions">
+        <button class="btn-traite${mail.traite?" done":""}" onclick="toggleTraite('${mail.id}',${!!mail.traite})">
+          ${mail.traite?"✓ Marqué comme traité — Cliquez pour annuler":"Marquer comme traité"}
+        </button>
+        ${mail.source==="gmail" && mail.gmail_id ? `
+          <button class="btn-reply" onclick="openReply('${mail.id}')">↩️ Répondre</button>
+        ` : ""}
+      </div>
+      ${mail.source==="gmail" && mail.gmail_id ? `
+        <div class="reply-form" id="replyform-${mail.id}" style="display:none">
+          <div class="reply-to">À : <strong>${mail.email_expediteur}</strong></div>
+          <textarea id="replytext-${mail.id}" placeholder="Écrivez votre réponse au patient…"></textarea>
+          <div class="reply-actions">
+            <button class="btn-ghost" onclick="cancelReply('${mail.id}')">Annuler</button>
+            <button class="btn-primary" id="sendbtn-${mail.id}" onclick="sendReply('${mail.id}')">Envoyer</button>
+          </div>
+        </div>
+      ` : ""}
     </div>
   </div>`;
 }
