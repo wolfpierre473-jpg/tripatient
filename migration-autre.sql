@@ -8,3 +8,6 @@ ALTER TABLE mails DROP CONSTRAINT IF EXISTS mails_classe_check;
 
 ALTER TABLE mails ADD CONSTRAINT mails_classe_check
   CHECK (classe IN ('urgent','moyen','pasurgent','inconnu','autre'));
+
+-- Ajoute la colonne pour stocker les métadonnées des photos jointes
+ALTER TABLE mails ADD COLUMN IF NOT EXISTS pieces_jointes JSONB DEFAULT '[]';

@@ -134,6 +134,14 @@
     .reply-actions .btn-primary { padding:6px 16px; font-size:0.8rem; }
     .reply-actions .btn-primary:disabled { opacity:.6; cursor:wait; }
 
+    .photos-box { margin-top:10px; background:#f7fafc; border-radius:8px; padding:10px 13px; }
+    .photos-box h4 { font-size:0.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a0aec0; margin-bottom:8px; }
+    .photos-grid { display:flex; flex-wrap:wrap; gap:8px; }
+    .btn-photos { background:#2b6cb0; color:white; border:none; border-radius:6px; padding:6px 14px; font-size:0.78rem; font-weight:600; cursor:pointer; }
+    .btn-photos:hover { background:#2c5282; }
+    .photo-thumb { width:120px; height:120px; object-fit:cover; border-radius:8px; border:1px solid #cbd5e0; cursor:pointer; transition:transform .1s; }
+    .photo-thumb:hover { transform:scale(1.04); border-color:#2b6cb0; }
+
     /* ── FAB ── */
     .fab { position:fixed; bottom:22px; right:22px; background:#2b6cb0; color:white; border:none; border-radius:50%; width:50px; height:50px; font-size:1.35rem; cursor:pointer; box-shadow:0 4px 16px rgba(43,108,176,.4); z-index:100; transition:.15s; }
     .fab:hover { background:#2c5282; transform:scale(1.05); }
@@ -559,6 +567,53 @@ function hdr(headers, name) {
   return (headers.find(h=>h.name.toLowerCase()===name.toLowerCase())||{}).value||"";
 }
 
+// Parcourt le mail et liste toutes les images jointes (photos de lésions, etc.)
+function collectAttachments(payload) {
+  const out = [];
+  const walk = (part) => {
+    if (!part) return;
+    const mime = (part.mimeType||"").toLowerCase();
+    if (mime.startsWith("image/") && part.body) {
+      if (part.body.attachmentId) {
+        out.push({ attachmentId: part.body.attachmentId, mimeType: part.mimeType, filename: part.filename||"photo" });
+      } else if (part.body.data) {
+        out.push({ data: part.body.data, mimeType: part.mimeType, filename: part.filename||"photo" });
+      }
+    }
+    (part.parts||[]).forEach(walk);
+  };
+  walk(payload);
+  return out;
+}
+
+// Charge et affiche les photos d'un mail (à la demande, quand on clique)
+async function loadPhotos(mailId) {
+  const mail = MAILS.find(m => m.id === mailId);
+  const container = document.getElementById("photos-"+mailId);
+  if (!mail || !container) return;
+  container.innerHTML = `<span style="font-size:.8rem;color:#718096">Chargement des photos…</span>`;
+  try {
+    const blocs = [];
+    for (const att of (mail.pieces_jointes||[])) {
+      let b64;
+      if (att.data) {
+        b64 = att.data;
+      } else {
+        if (!accessToken) { container.innerHTML = `<span style="font-size:.8rem;color:#c53030">Connectez Gmail pour afficher les photos.</span>`; return; }
+        const res = await gmailFetchRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${mail.gmail_id}/attachments/${att.attachmentId}`
+        );
+        b64 = res.data;
+      }
+      const dataUrl = `data:${att.mimeType};base64,${b64.replace(/-/g,"+").replace(/_/g,"/")}`;
+      blocs.push(`<a href="${dataUrl}" target="_blank" rel="noopener" title="${att.filename}"><img src="${dataUrl}" class="photo-thumb" alt="${att.filename}"></a>`);
+    }
+    container.innerHTML = blocs.length ? blocs.join("") : `<span style="font-size:.8rem;color:#718096">Aucune image trouvée.</span>`;
+  } catch(e) {
+    container.innerHTML = `<span style="font-size:.8rem;color:#c53030">Erreur : ${e.message}</span>`;
+  }
+}
+
 async function syncGmail() {
   if (!accessToken) return;
   setSyncBar(true,"Récupération des mails Gmail…");
@@ -596,6 +651,7 @@ async function syncGmail() {
       const date    = hdr(headers,"Date");
       const corps   = extractBody(msg.payload).substring(0,2000);
       const nomExp  = from.replace(/<.+>/,"").trim().replace(/"/g,"")||emailExp;
+      const photos  = collectAttachments(msg.payload);
       const estPatient = !!getPatientByEmail(emailExp);
       const { classe, regle_label } = classerMail(
         { sujet, corps, email_expediteur:emailExp, nom_expediteur:nomExp },
@@ -609,15 +665,19 @@ async function syncGmail() {
         date_reception:    date ? new Date(date).toISOString() : new Date().toISOString(),
         sujet, corps, classe, regle_label,
         source:"gmail", gmail_id:msg.id, traite:false,
+        pieces_jointes:   photos,
       };
       MAILS.unshift(mail);
       nouveaux.push(mail);
     }
 
-    // Sauvegarder dans Supabase
+    // Sauvegarder dans Supabase (on ne stocke que les métadonnées des photos, pas les octets)
     if (sb && nouveaux.length) {
       await sb.from("mails").upsert(nouveaux.map(m => ({
         ...m,
+        pieces_jointes: (m.pieces_jointes||[])
+          .filter(a => a.attachmentId)
+          .map(a => ({ attachmentId:a.attachmentId, mimeType:a.mimeType, filename:a.filename })),
         patient_id: getPatientByEmail(m.email_expediteur)?.id || null,
       })));
     }
@@ -708,6 +768,14 @@ function renderCard(item, idx) {
       <div class="mail-body-box">
         <h4>✉️ Contenu du message</h4>${mail.corps||"(corps vide)"}
       </div>
+      ${mail.pieces_jointes?.length ? `
+        <div class="photos-box">
+          <h4>📷 Photos jointes (${mail.pieces_jointes.length})</h4>
+          <div id="photos-${mail.id}" class="photos-grid">
+            <button class="btn-photos" onclick="loadPhotos('${mail.id}')">Afficher les photos</button>
+          </div>
+        </div>
+      ` : ""}
       <div class="card-actions">
         <button class="btn-traite${mail.traite?" done":""}" onclick="toggleTraite('${mail.id}',${!!mail.traite})">
           ${mail.traite?"✓ Marqué comme traité — Cliquez pour annuler":"Marquer comme traité"}

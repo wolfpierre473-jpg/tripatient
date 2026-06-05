@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS mails (
   source            TEXT CHECK (source IN ('gmail','demo','manuel')),
   gmail_id          TEXT UNIQUE,                   -- null si demo/manuel
   patient_id        TEXT REFERENCES patients(id),
+  pieces_jointes    JSONB    DEFAULT '[]',          -- métadonnées des photos jointes
   traite            BOOLEAN DEFAULT FALSE,          -- le médecin a traité ce mail
   created_at        TIMESTAMPTZ DEFAULT NOW()
 );
