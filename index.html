@@ -289,7 +289,17 @@ const DEMO_MAILS = [
 // ════════════════════════════════════════════════════════════════
 // Règles de classification
 // ════════════════════════════════════════════════════════════════
+// Motifs "facture / paiement" — priorité maximale, classés URGENT
+const FACTURE_TESTS = [
+  /\bfactures?\b/i, /\binvoice\b/i, /\bimpay[ée]e?s?\b/i,
+  /relance\s+(de\s+)?paiement/i, /[ée]ch[ée]ance.{0,25}paiement/i,
+  /r[èe]glement.{0,25}facture/i, /facture.{0,25}[àa]\s+r[ée]gler/i,
+  /paiement.{0,25}(en\s+attente|[àa]\s+r[ée]gler|d[ûu]|dus?)/i,
+  /\bavis\s+d.[ée]ch[ée]ance\b/i, /\bprélèvement\b/i,
+];
+
 const REGLES = [
+  { id:"facture",          label:"Facture / paiement",                     classe:"urgent",    tests:FACTURE_TESTS },
   { id:"annulation",       label:"Annulation de rendez-vous",              classe:"urgent",    tests:[/annul/i] },
   { id:"peau-blanche-nez", label:"Peau blanche à côté du nez",            classe:"urgent",    tests:[/peau\s+blanche.{0,30}nez/i,/blanc.{0,20}nez/i] },
   { id:"boutons-persist",  label:"Bouton(s) persistant(s)",                classe:"urgent",    tests:[/boutons?\s+persist/i,/persist.{0,20}bouton/i] },
@@ -347,7 +357,7 @@ const CORPS_COMMERCIAL = [
   /cet\s+e?mail\s+a\s+[ée]t[ée]\s+envoy[ée]/i, /pour\s+vous\s+d[ée]sinscrire/i,
   /code\s+promo/i, /offre\s+exclusive/i, /offre\s+sp[ée]ciale/i, /\-\s*\d{1,2}\s*%/i,
   /\bsoldes\b/i, /\bnewsletter\b/i, /votre\s+commande/i, /votre\s+colis/i, /suivi\s+de\s+(votre\s+)?colis/i,
-  /num[ée]ro\s+de\s+suivi/i, /votre\s+facture/i, /confirmation\s+de\s+commande/i,
+  /num[ée]ro\s+de\s+suivi/i, /confirmation\s+de\s+commande/i,
   /bon\s+de\s+r[ée]duction/i, /flash\s+sale/i, /black\s+friday/i, /vente\s+priv[ée]e/i,
 ];
 
@@ -362,12 +372,16 @@ function estCommercial(mail) {
 
 // Classification.  isPatient = l'expéditeur est un patient enregistré.
 function classerMail(mail, isPatient=false) {
-  // 1) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
+  const txt = (mail.sujet||"") + " " + (mail.corps||"");
+  // 1) Factures / paiements → URGENT (priorité maximale, même pour les fournisseurs)
+  if (FACTURE_TESTS.some(re => re.test(txt))) {
+    return { classe:"urgent", regle_label:"Facture / paiement" };
+  }
+  // 2) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
   if (!isPatient && estCommercial(mail)) {
     return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
   }
-  // 2) Règles médicales (patient ou non)
-  const txt = (mail.sujet||"") + " " + (mail.corps||"");
+  // 3) Règles médicales (patient ou non)
   for (const r of REGLES) {
     for (const re of r.tests) {
       if (re.test(txt)) return { classe:r.classe, regle_label:r.label };
