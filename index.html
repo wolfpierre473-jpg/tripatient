@@ -733,24 +733,43 @@ async function loadPhotos(mailId) {
 
 async function syncGmail() {
   if (!accessToken) return;
-  setSyncBar(true,"Récupération des mails Gmail…");
+  setSyncBar(true,"Recherche des nouveaux mails…");
   try {
-    const list = await gmailFetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&labelIds=INBOX&q=is:unread newer_than:7d"
+    // Ids des mails Gmail déjà connus (en mémoire / Supabase) pour éviter les doublons
+    const existingIds = new Set(
+      MAILS.filter(m => m.source==="gmail" && m.gmail_id).map(m => m.gmail_id)
     );
-    if (!list.messages?.length) {
+    const gmailMails = MAILS.filter(m => m.source==="gmail" && m.date_reception);
+
+    // Sync incrémentale : on ne demande QUE les mails arrivés après le plus récent déjà connu.
+    // Premier lancement (rien en base) : on amorce avec les 2 derniers jours.
+    let q;
+    if (gmailMails.length) {
+      const plusRecent = Math.max(...gmailMails.map(m => new Date(m.date_reception).getTime()));
+      const epoch = Math.floor(plusRecent / 1000); // secondes
+      q = `in:inbox after:${epoch}`;
+    } else {
+      q = `in:inbox newer_than:2d`;
+    }
+
+    const list = await gmailFetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}`
+    );
+
+    // On retire ceux déjà présents (le mail le plus récent est souvent re-renvoyé par "after:")
+    const aRecuperer = (list.messages||[]).filter(m => !existingIds.has(m.id));
+
+    if (!aRecuperer.length) {
       setSyncBar(false);
-      showToast("Aucun mail non lu.",3000,"#276749");
+      showToast("Aucun nouveau mail.",3000,"#276749");
       render(); return;
     }
-    setSyncBar(true, `Lecture de ${list.messages.length} message(s)…`);
-    MAILS = MAILS.filter(m => m.source !== "gmail");
 
     // Chargement séquentiel (un par un) pour éviter le "too many requests"
     const details = [];
-    for (let i = 0; i < list.messages.length; i++) {
-      const m = list.messages[i];
-      setSyncBar(true, `Lecture du message ${i+1}/${list.messages.length}…`);
+    for (let i = 0; i < aRecuperer.length; i++) {
+      const m = aRecuperer[i];
+      setSyncBar(true, `Nouveau mail ${i+1}/${aRecuperer.length}…`);
       const msg = await gmailFetchRetry(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`
       );
@@ -801,7 +820,7 @@ async function syncGmail() {
 
     setSyncBar(false);
     render();
-    showToast(`${details.length} mail(s) synchronisé(s)`,3000,"#276749");
+    showToast(`${details.length} nouveau${details.length>1?"x":""} mail${details.length>1?"s":""} ajouté${details.length>1?"s":""}`,3000,"#276749");
   } catch(err) {
     setSyncBar(false);
     if (err.message.includes("401")) {
