@@ -752,12 +752,23 @@ async function syncGmail() {
       q = `in:inbox newer_than:2d`;
     }
 
-    const list = await gmailFetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}`
-    );
+    // Pagination : on récupère TOUTES les pages, donc aucun plafond.
+    // (sécurité : on s'arrête à 1000 mails pour éviter un cas extrême)
+    let tousLesMsg = [];
+    let pageToken = null;
+    const PLAFOND_SECURITE = 1000;
+    do {
+      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}`
+        + (pageToken ? `&pageToken=${pageToken}` : "");
+      const page = await gmailFetchRetry(url);
+      if (page.messages) tousLesMsg.push(...page.messages);
+      pageToken = page.nextPageToken;
+      if (tousLesMsg.length >= PLAFOND_SECURITE) break;
+      if (pageToken) setSyncBar(true, `Recherche… ${tousLesMsg.length} mails trouvés`);
+    } while (pageToken);
 
     // On retire ceux déjà présents (le mail le plus récent est souvent re-renvoyé par "after:")
-    const aRecuperer = (list.messages||[]).filter(m => !existingIds.has(m.id));
+    const aRecuperer = tousLesMsg.filter(m => !existingIds.has(m.id));
 
     if (!aRecuperer.length) {
       setSyncBar(false);
