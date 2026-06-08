@@ -278,14 +278,6 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 let PATIENTS = [];
 let MAILS    = [];
 
-const DEMO_MAILS = [
-  { id:"M001", email_expediteur:"sophie.martin@email.com",  date_reception:"2026-05-29T08:15:00", sujet:"Tache suspecte apparue rapidement",       corps:"Bonjour docteur, depuis 3 jours j'ai remarqué une nouvelle tache foncée sur mon dos qui a l'air de grandir. Elle est asymétrique et les bords sont irréguliers.", source:"demo", traite:false },
-  { id:"M002", email_expediteur:"jean.dubois@email.com",    date_reception:"2026-05-29T09:30:00", sujet:"Renouvellement ordonnance",                corps:"Bonjour, mon ordonnance de méthotrexate arrive à expiration. Pourriez-vous me faire un renouvellement ? Mon état est stable.", source:"demo", traite:false },
-  { id:"M003", email_expediteur:"emma.leroy@email.com",     date_reception:"2026-05-29T10:00:00", sujet:"Effets secondaires traitement",            corps:"Docteur, depuis l'isotrétinoïne j'ai des maux de tête quotidiens et un bouton qui persiste depuis 2 semaines.", source:"demo", traite:false },
-  { id:"M004", email_expediteur:"michel.bernard@email.com", date_reception:"2026-05-29T07:45:00", sujet:"URGENT - Apparition de nouvelles lésions", corps:"Docteur, depuis hier soir de nouvelles plaques rouges sont apparues sur mon torse. Elles saignent. Est-ce que mon lymphome évolue ?", source:"demo", traite:false },
-  { id:"M005", email_expediteur:"laura.petit@email.com",    date_reception:"2026-05-29T11:20:00", sujet:"Demande de rendez-vous",                   corps:"Bonjour, je souhaiterais prendre rendez-vous. Rien d'urgent, juste un contrôle de routine.", source:"demo", traite:false },
-];
-
 // ════════════════════════════════════════════════════════════════
 // Règles de classification
 // ════════════════════════════════════════════════════════════════
@@ -402,18 +394,9 @@ async function loadPatients() {
 }
 
 async function loadMails() {
-  if (!sb) { MAILS = [...DEMO_MAILS]; return; }
-  const { data, error } = await sb.from("mails").select("*").order("date_reception", { ascending:false }).limit(100);
-  if (!error && data && data.length > 0) {
-    MAILS = data;
-  } else {
-    // Premier lancement : insérer les démos
-    MAILS = [...DEMO_MAILS];
-    await sb.from("mails").upsert(MAILS.map(m => ({
-      ...m,
-      patient_id: getPatientByEmail(m.email_expediteur)?.id || null
-    })));
-  }
+  if (!sb) { MAILS = []; return; }
+  const { data, error } = await sb.from("mails").select("*").order("date_reception", { ascending:false }).limit(200);
+  MAILS = (!error && data) ? data : [];
 }
 
 async function saveMail(mail) {
@@ -1081,7 +1064,7 @@ window.addEventListener("load", async () => {
       { id:"P004",nom:"Bernard",prenom:"Michel",email:"michel.bernard@email.com",antecedents:["lymphome cutané T (2024)","diabète type 2"],traitement_en_cours:"photothérapie UVB + corticoïdes locaux",dernier_rdv:"2026-05-20",prochain_rdv:"2026-06-03",risque:"très élevé" },
       { id:"P005",nom:"Petit",prenom:"Laura",email:"laura.petit@email.com",antecedents:[],traitement_en_cours:null,dernier_rdv:"2026-01-10",prochain_rdv:null,risque:"faible" },
     ];
-    MAILS = [...DEMO_MAILS];
+    MAILS = [];
     render();
     return;
   }
