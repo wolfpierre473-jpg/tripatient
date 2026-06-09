@@ -21,6 +21,9 @@
     .btn-gmail.connected { background:#c6f6d5; color:#276749; }
     .gmail-dot { width:8px; height:8px; border-radius:50%; background:#fc8181; display:inline-block; }
     .gmail-dot.on { background:#68d391; }
+    .btn-refresh-hdr { background:rgba(255,255,255,.15); color:white; border:1px solid rgba(255,255,255,.3); border-radius:8px; padding:6px 12px; font-size:0.78rem; font-weight:600; cursor:pointer; transition:.15s; }
+    .btn-refresh-hdr:hover { background:rgba(255,255,255,.28); }
+    .btn-refresh-hdr.ia-on { background:#c6f6d5; color:#276749; border-color:#9ae6b4; }
 
     /* ── Stats bar ── */
     .stats-bar { background:white; padding:10px 24px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #e2e8f0; flex-wrap:wrap; }
@@ -205,6 +208,9 @@
   </div>
   <div class="header-right">
     <div class="clock" id="clock"></div>
+    <button class="btn-refresh-hdr" onclick="syncGmail()" title="Récupérer les nouveaux mails">↻ Actualiser</button>
+    <button class="btn-refresh-hdr" onclick="importerHistorique()" title="Importer les mails plus anciens">⏳ Importer l'historique</button>
+    <button class="btn-refresh-hdr" id="btnIA" onclick="configurerIA()" title="Activer le tri par IA (Gemini)">🤖 IA</button>
     <button class="btn-gmail" id="btnGmail" onclick="handleGmailAuth()">
       <span class="gmail-dot" id="gmailDot"></span>
       <span id="btnGmailLabel">Connecter Gmail</span>
@@ -265,6 +271,7 @@
 const SUPABASE_URL    = localStorage.getItem("tp_supabaseUrl")   || "";
 const SUPABASE_KEY    = localStorage.getItem("tp_supabaseKey")   || "";
 const GMAIL_CLIENT_ID = localStorage.getItem("tp_gmailClientId") || "";
+const GEMINI_KEY      = localStorage.getItem("tp_geminiKey")     || "";  // optionnel : active l'IA
 
 // ── Supabase client ──────────────────────────────────────────
 let sb = null;
@@ -369,17 +376,18 @@ function classerMail(mail, isPatient=false) {
   if (FACTURE_TESTS.some(re => re.test(txt))) {
     return { classe:"urgent", regle_label:"Facture / paiement" };
   }
-  // 2) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
-  if (!isPatient && estCommercial(mail)) {
-    return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
-  }
-  // 3) Règles médicales (patient ou non)
+  // 2) Règles médicales (priorité sur le commercial : un vrai mail médical ne doit
+  //    jamais finir en "Autre", même si l'expéditeur n'est pas un patient enregistré)
   for (const r of REGLES) {
     for (const re of r.tests) {
       if (re.test(txt)) return { classe:r.classe, regle_label:r.label };
     }
   }
-  // 3) Aucun pattern reconnu
+  // 3) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
+  if (!isPatient && estCommercial(mail)) {
+    return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
+  }
+  // 4) Aucun pattern reconnu
   if (isPatient) return { classe:"inconnu", regle_label:"Patient — cas non répertorié" };
   return { classe:"autre", regle_label:"Expéditeur inconnu / non-patient" };
 }
@@ -714,9 +722,64 @@ async function loadPhotos(mailId) {
   }
 }
 
-async function syncGmail() {
+// ── Configuration de l'IA (clé Gemini) ──
+function configurerIA() {
+  const actuelle = localStorage.getItem("tp_geminiKey") || "";
+  const msg = actuelle
+    ? "L'IA est ACTIVÉE.\n\nCollez une nouvelle clé Gemini pour la remplacer,\nou laissez vide et OK pour la DÉSACTIVER."
+    : "Activer le tri par IA (Google Gemini, gratuit).\n\n1. Allez sur https://aistudio.google.com/apikey\n2. Créez une clé API gratuite\n3. Collez-la ci-dessous :";
+  const saisie = prompt(msg, actuelle);
+  if (saisie === null) return; // annulé
+  const k = saisie.trim();
+  if (k) localStorage.setItem("tp_geminiKey", k);
+  else   localStorage.removeItem("tp_geminiKey");
+  location.reload();
+}
+
+// Classe un lot de mails via l'IA Gemini. Renvoie [{id, classe, raison}] ou lève une erreur.
+async function aiClassifyBatch(items) {
+  const prompt = `Tu es un assistant de tri pour un cabinet de DERMATOLOGIE. Classe chaque email dans EXACTEMENT une de ces catégories :
+- "urgent" : lésion qui saigne/grossit, bouton persistant, plaie avec croûtes, annulation de rdv, suite de consultation passée, FACTURE ou paiement, peau blanche près du nez, douleur/inquiétude forte.
+- "moyen" : grain de beauté nouveau ou suspect, plaque cutanée, rougeur sous l'œil, demande d'ordonnance/renouvellement, contrôle sous biothérapie.
+- "pasurgent" : acné, verrues, contrôle de routine, simple demande de rendez-vous sans précision.
+- "inconnu" : email d'un VRAI patient mais dont le motif n'entre dans aucune catégorie ci-dessus.
+- "autre" : email NON lié à un patient (publicité, entreprise, Vinted, La Poste, newsletter, réseau social, notification automatique).
+
+Réponds UNIQUEMENT en JSON : un tableau d'objets {"id":"...","classe":"...","raison":"courte phrase en français"}.
+
+Emails à classer :
+${JSON.stringify(items)}`;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+    {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        contents:[{ parts:[{ text: prompt }] }],
+        generationConfig:{ responseMimeType:"application/json", temperature:0 },
+      }),
+    }
+  );
+  if (!res.ok) throw new Error("Gemini " + res.status);
+  const data = await res.json();
+  const txt  = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+  return JSON.parse(txt);
+}
+
+// Importe les mails plus anciens (au-delà de la synchro incrémentale)
+async function importerHistorique() {
+  if (!accessToken) { showToast("Connectez Gmail d'abord."); return; }
+  const saisie = prompt("Importer les mails reçus depuis combien de jours ?\n(ex: 30 pour le dernier mois)", "30");
+  if (saisie === null) return;
+  const jours = parseInt(saisie, 10);
+  if (!jours || jours < 1 || jours > 365) { showToast("Entrez un nombre de jours entre 1 et 365."); return; }
+  await syncGmail(`in:inbox newer_than:${jours}d`);
+}
+
+async function syncGmail(forceQuery=null) {
   if (!accessToken) return;
-  setSyncBar(true,"Recherche des nouveaux mails…");
+  setSyncBar(true, forceQuery ? "Import de l'historique…" : "Recherche des nouveaux mails…");
   try {
     // Ids des mails Gmail déjà connus (en mémoire / Supabase) pour éviter les doublons
     const existingIds = new Set(
@@ -725,9 +788,11 @@ async function syncGmail() {
     const gmailMails = MAILS.filter(m => m.source==="gmail" && m.date_reception);
 
     // Sync incrémentale : on ne demande QUE les mails arrivés après le plus récent déjà connu.
-    // Premier lancement (rien en base) : on amorce avec les 2 derniers jours.
+    // forceQuery permet d'importer une fenêtre plus large (ex: historique sur 30 jours).
     let q;
-    if (gmailMails.length) {
+    if (forceQuery) {
+      q = forceQuery;
+    } else if (gmailMails.length) {
       const plusRecent = Math.max(...gmailMails.map(m => new Date(m.date_reception).getTime()));
       const epoch = Math.floor(plusRecent / 1000); // secondes
       q = `in:inbox after:${epoch}`;
@@ -801,6 +866,32 @@ async function syncGmail() {
       nouveaux.push(mail);
     }
 
+    // Affinage par IA (si une clé Gemini est configurée) — par lots de 10
+    if (GEMINI_KEY && nouveaux.length) {
+      try {
+        for (let i = 0; i < nouveaux.length; i += 10) {
+          setSyncBar(true, `Analyse IA ${Math.min(i+10,nouveaux.length)}/${nouveaux.length}…`);
+          const lot = nouveaux.slice(i, i+10).map(m => ({
+            id: m.id,
+            sujet: m.sujet,
+            corps: (m.corps||"").slice(0, 600),
+            expediteur: m.email_expediteur,
+            estPatient: !!getPatientByEmail(m.email_expediteur),
+          }));
+          const res = await aiClassifyBatch(lot);
+          res.forEach(r => {
+            const m = nouveaux.find(x => x.id === r.id);
+            if (m && CLASSE_META[r.classe]) {
+              m.classe = r.classe;
+              m.regle_label = "IA : " + (r.raison || r.classe);
+            }
+          });
+        }
+      } catch(e) {
+        showToast("IA indisponible — classement par règles conservé.", 4000, "#c05621");
+      }
+    }
+
     // Sauvegarder dans Supabase (on ne stocke que les métadonnées des photos, pas les octets)
     if (sb && nouveaux.length) {
       await sb.from("mails").upsert(nouveaux.map(m => ({
@@ -841,9 +932,14 @@ function classerTous() {
   const pMap = Object.fromEntries(PATIENTS.map(p => [p.email?.toLowerCase(), p]));
   return MAILS.map(m => {
     const patient = pMap[m.email_expediteur?.toLowerCase()] || null;
-    const { classe, regle_label } = m.classe
-      ? { classe:m.classe, regle_label:m.regle_label }
-      : classerMail(m, !!patient);
+    // Les mails classés par l'IA gardent leur décision (préfixe "IA :").
+    // Les autres sont reclassés par règles à l'affichage (pour suivre toute évolution des règles).
+    let classe, regle_label;
+    if (m.classe && typeof m.regle_label === "string" && m.regle_label.startsWith("IA")) {
+      classe = m.classe; regle_label = m.regle_label;
+    } else {
+      ({ classe, regle_label } = classerMail(m, !!patient));
+    }
     return { mail:m, patient, classe, regle_label };
   });
 }
@@ -1071,6 +1167,12 @@ window.addEventListener("load", async () => {
 
   await Promise.all([loadPatients(), loadMails()]);
   render();
+
+  // Indiquer si l'IA est active
+  if (GEMINI_KEY) {
+    const b = document.getElementById("btnIA");
+    if (b) { b.className = "btn-refresh-hdr ia-on"; b.textContent = "🤖 IA activée"; }
+  }
 
   // Init Google Auth après chargement du script GSI
   const waitGSI = setInterval(() => {
