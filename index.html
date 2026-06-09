@@ -211,6 +211,7 @@
     <button class="btn-refresh-hdr" onclick="syncGmail()" title="Récupérer les nouveaux mails">↻ Actualiser</button>
     <button class="btn-refresh-hdr" onclick="importerHistorique()" title="Importer les mails plus anciens">⏳ Importer l'historique</button>
     <button class="btn-refresh-hdr" id="btnIA" onclick="configurerIA()" title="Activer le tri par IA (Gemini)">🤖 IA</button>
+    <button class="btn-refresh-hdr" id="btnReclasser" onclick="reclasserToutIA()" title="Repasser tous les mails dans l'IA" style="display:none">♻️ Reclasser (IA)</button>
     <button class="btn-gmail" id="btnGmail" onclick="handleGmailAuth()">
       <span class="gmail-dot" id="gmailDot"></span>
       <span id="btnGmailLabel">Connecter Gmail</span>
@@ -767,6 +768,43 @@ ${JSON.stringify(items)}`;
   return JSON.parse(txt);
 }
 
+// Repasse TOUS les mails déjà enregistrés dans l'IA (corrige les anciens classés par règles)
+async function reclasserToutIA() {
+  if (!GEMINI_KEY) { showToast("Activez d'abord l'IA (bouton 🤖 IA)."); return; }
+  const cibles = MAILS.filter(m => m.source === "gmail" || m.source === "manuel");
+  if (!cibles.length) { showToast("Aucun mail à reclasser."); return; }
+  if (!confirm(`Reclasser les ${cibles.length} mails avec l'IA ?\nCela peut prendre un moment.`)) return;
+
+  setSyncBar(true, "Reclassement par IA…");
+  let fait = 0;
+  try {
+    for (let i = 0; i < cibles.length; i += 10) {
+      setSyncBar(true, `Reclassement IA ${Math.min(i+10,cibles.length)}/${cibles.length}…`);
+      const lot = cibles.slice(i, i+10).map(m => ({
+        id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
+        expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
+      }));
+      const res = await aiClassifyBatch(lot);
+      for (const r of res) {
+        const m = cibles.find(x => x.id === r.id);
+        if (m && CLASSE_META[r.classe]) {
+          m.classe = r.classe;
+          m.regle_label = "IA : " + (r.raison || r.classe);
+          fait++;
+          if (sb) await sb.from("mails").update({ classe:m.classe, regle_label:m.regle_label }).eq("id", m.id);
+        }
+      }
+    }
+    setSyncBar(false);
+    render();
+    showToast(`${fait} mail(s) reclassés par l'IA ✅`, 3000, "#276749");
+  } catch(e) {
+    setSyncBar(false);
+    render();
+    showToast("IA indisponible — reclassement interrompu : " + e.message);
+  }
+}
+
 // Importe les mails plus anciens (au-delà de la synchro incrémentale)
 async function importerHistorique() {
   if (!accessToken) { showToast("Connectez Gmail d'abord."); return; }
@@ -777,8 +815,12 @@ async function importerHistorique() {
   await syncGmail(`in:inbox newer_than:${jours}d`);
 }
 
+let syncEnCours = false;  // verrou : empêche deux synchros simultanées (anti-doublon)
+
 async function syncGmail(forceQuery=null) {
   if (!accessToken) return;
+  if (syncEnCours) { showToast("Une synchronisation est déjà en cours…", 2500, "#c05621"); return; }
+  syncEnCours = true;
   setSyncBar(true, forceQuery ? "Import de l'historique…" : "Recherche des nouveaux mails…");
   try {
     // Ids des mails Gmail déjà connus (en mémoire / Supabase) pour éviter les doublons
@@ -912,6 +954,8 @@ async function syncGmail(forceQuery=null) {
       accessToken=null; setGmailConnected(false);
       showToast("Session expirée, veuillez vous reconnecter.");
     } else { showToast("Erreur Gmail : "+err.message); }
+  } finally {
+    syncEnCours = false;  // on libère toujours le verrou
   }
 }
 
@@ -1168,10 +1212,12 @@ window.addEventListener("load", async () => {
   await Promise.all([loadPatients(), loadMails()]);
   render();
 
-  // Indiquer si l'IA est active
+  // Indiquer si l'IA est active + afficher le bouton de reclassement
   if (GEMINI_KEY) {
     const b = document.getElementById("btnIA");
     if (b) { b.className = "btn-refresh-hdr ia-on"; b.textContent = "🤖 IA activée"; }
+    const r = document.getElementById("btnReclasser");
+    if (r) r.style.display = "";
   }
 
   // Init Google Auth après chargement du script GSI
