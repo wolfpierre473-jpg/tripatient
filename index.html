@@ -762,10 +762,29 @@ ${JSON.stringify(items)}`;
       }),
     }
   );
-  if (!res.ok) throw new Error("Gemini " + res.status);
+  if (!res.ok) { const err = new Error("Gemini " + res.status); err.status = res.status; throw err; }
   const data = await res.json();
   const txt  = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
   return JSON.parse(txt);
+}
+
+// Appel IA avec reprise automatique si Gemini est saturé (429/449/5xx)
+async function aiClassifyRetry(items, maxRetries=5) {
+  let attente = 4000; // 4s au départ (le gratuit accepte ~15 requêtes/min)
+  for (let essai=0; essai<=maxRetries; essai++) {
+    try {
+      return await aiClassifyBatch(items);
+    } catch(e) {
+      const saturé = [429,449,500,503].includes(e.status) || /quota|rate|resource/i.test(e.message||"");
+      if (saturé && essai < maxRetries) {
+        setSyncBar(true, `IA saturée — pause ${Math.round(attente/1000)}s puis reprise…`);
+        await sleep(attente);
+        attente = Math.min(attente*2, 30000); // jusqu'à 30s
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 // Repasse TOUS les mails déjà enregistrés dans l'IA (corrige les anciens classés par règles)
@@ -784,7 +803,7 @@ async function reclasserToutIA() {
         id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
         expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
       }));
-      const res = await aiClassifyBatch(lot);
+      const res = await aiClassifyRetry(lot);
       for (const r of res) {
         const m = cibles.find(x => x.id === r.id);
         if (m && CLASSE_META[r.classe]) {
@@ -794,6 +813,7 @@ async function reclasserToutIA() {
           if (sb) await sb.from("mails").update({ classe:m.classe, regle_label:m.regle_label }).eq("id", m.id);
         }
       }
+      await sleep(4500); // pause entre lots pour respecter la limite gratuite (~15 req/min)
     }
     setSyncBar(false);
     render();
@@ -920,7 +940,7 @@ async function syncGmail(forceQuery=null) {
             expediteur: m.email_expediteur,
             estPatient: !!getPatientByEmail(m.email_expediteur),
           }));
-          const res = await aiClassifyBatch(lot);
+          const res = await aiClassifyRetry(lot);
           res.forEach(r => {
             const m = nouveaux.find(x => x.id === r.id);
             if (m && CLASSE_META[r.classe]) {
@@ -928,6 +948,7 @@ async function syncGmail(forceQuery=null) {
               m.regle_label = "IA : " + (r.raison || r.classe);
             }
           });
+          await sleep(4500); // pause entre lots (limite gratuite ~15 req/min)
         }
       } catch(e) {
         showToast("IA indisponible — classement par règles conservé.", 4000, "#c05621");
