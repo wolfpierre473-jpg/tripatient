@@ -399,13 +399,34 @@ function classerMail(mail, isPatient=false) {
 async function loadPatients() {
   if (!sb) return;
   const { data, error } = await sb.from("patients").select("*").order("nom");
-  if (!error && data) PATIENTS = data;
+  if (!error && data) { PATIENTS = data; cachePatients(); }
 }
 
 async function loadMails() {
   if (!sb) { MAILS = []; return; }
   const { data, error } = await sb.from("mails").select("*").order("date_reception", { ascending:false }).limit(200);
-  MAILS = (!error && data) ? data : [];
+  if (!error && data) { MAILS = data; cacheMails(); }
+}
+
+// ── Cache local : affichage instantané sans attendre le réseau ──
+function cacheMails() {
+  try {
+    const slim = MAILS.slice(0, 200).map(m => ({
+      ...m,
+      // on n'embarque pas les octets des photos (trop lourd) — juste les références
+      pieces_jointes: (m.pieces_jointes||[])
+        .filter(a => a.attachmentId)
+        .map(a => ({ attachmentId:a.attachmentId, mimeType:a.mimeType, filename:a.filename })),
+    }));
+    localStorage.setItem("tp_mailsCache", JSON.stringify(slim));
+  } catch(e) { /* quota localStorage dépassé : on ignore */ }
+}
+function cachePatients() {
+  try { localStorage.setItem("tp_patientsCache", JSON.stringify(PATIENTS)); } catch(e) {}
+}
+function lireCache() {
+  try { MAILS    = JSON.parse(localStorage.getItem("tp_mailsCache")    || "[]"); } catch(e) { MAILS = []; }
+  try { PATIENTS = JSON.parse(localStorage.getItem("tp_patientsCache") || "[]"); } catch(e) { PATIENTS = []; }
 }
 
 async function saveMail(mail) {
@@ -1119,6 +1140,8 @@ function render() {
   const lp = document.getElementById("legendPanel") || buildLegend();
   document.getElementById("main").innerHTML = html;
   document.getElementById("main").prepend(lp);
+
+  cacheMails();  // garde le cache local synchronisé avec l'affichage
 }
 
 function buildLegend() {
@@ -1230,7 +1253,8 @@ window.addEventListener("load", async () => {
     return;
   }
 
-  await Promise.all([loadPatients(), loadMails()]);
+  // 1) AFFICHAGE INSTANTANÉ depuis le cache local (zéro attente réseau)
+  lireCache();
   render();
 
   // Indiquer si l'IA est active + afficher le bouton de reclassement
@@ -1241,7 +1265,11 @@ window.addEventListener("load", async () => {
     if (r) r.style.display = "";
   }
 
-  // Init Google Auth après chargement du script GSI
+  // 2) Rafraîchissement en arrière-plan depuis Supabase (met à jour si besoin)
+  await Promise.all([loadPatients(), loadMails()]);
+  render();
+
+  // 3) Init Google Auth après chargement du script GSI
   const waitGSI = setInterval(() => {
     if (typeof google !== "undefined") { clearInterval(waitGSI); initGoogleAuth(); }
   }, 200);
