@@ -262,8 +262,8 @@
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- Supabase JS v2 CDN -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Supabase JS v2 CDN (defer : ne bloque plus l'affichage initial) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" defer></script>
 
 <script>
 // ════════════════════════════════════════════════════════════════
@@ -274,10 +274,20 @@ const SUPABASE_KEY    = localStorage.getItem("tp_supabaseKey")   || "";
 const GMAIL_CLIENT_ID = localStorage.getItem("tp_gmailClientId") || "";
 const GEMINI_KEY      = localStorage.getItem("tp_geminiKey")     || "";  // optionnel : active l'IA
 
-// ── Supabase client ──────────────────────────────────────────
+// ── Supabase client (créé à la demande, car la librairie est en "defer") ──
 let sb = null;
-if (SUPABASE_URL && SUPABASE_KEY) {
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+function ensureSb() {
+  if (!sb && typeof supabase !== "undefined" && SUPABASE_URL && SUPABASE_KEY) {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+  return sb;
+}
+// Attend que la librairie Supabase (chargée en differé) soit prête
+function waitForSupabase() {
+  return new Promise(res => {
+    if (ensureSb()) return res();
+    const t = setInterval(() => { if (ensureSb()) { clearInterval(t); res(); } }, 50);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1238,9 +1248,11 @@ updateClock(); setInterval(updateClock, 1000);
 // ════════════════════════════════════════════════════════════════
 // Init
 // ════════════════════════════════════════════════════════════════
-window.addEventListener("load", async () => {
+// On s'exécute IMMÉDIATEMENT (le script est en bas du <body>, le DOM est prêt).
+// Surtout : on n'attend PAS l'événement "load" qui patiente après tous les scripts externes.
+(function init() {
   if (!SUPABASE_URL || !SUPABASE_KEY || !GMAIL_CLIENT_ID) {
-    // Afficher quand même l'app en mode démo, setup accessible via bouton Gmail
+    // Mode non configuré : aperçu + setup accessible via bouton Gmail
     PATIENTS = [
       { id:"P001",nom:"Martin",prenom:"Sophie",email:"sophie.martin@email.com",antecedents:["mélanome stade I (2022)","carcinome basocellulaire (2019)"],traitement_en_cours:"surveillance trimestrielle",dernier_rdv:"2026-02-15",prochain_rdv:"2026-06-10",risque:"élevé" },
       { id:"P002",nom:"Dubois",prenom:"Jean",email:"jean.dubois@email.com",antecedents:["eczéma chronique","psoriasis modéré"],traitement_en_cours:"méthotrexate 15mg/semaine",dernier_rdv:"2026-04-01",prochain_rdv:"2026-07-01",risque:"modéré" },
@@ -1253,11 +1265,11 @@ window.addEventListener("load", async () => {
     return;
   }
 
-  // 1) AFFICHAGE INSTANTANÉ depuis le cache local (zéro attente réseau)
+  // 1) AFFICHAGE INSTANTANÉ depuis le cache local (synchrone, zéro attente réseau)
   lireCache();
   render();
 
-  // Indiquer si l'IA est active + afficher le bouton de reclassement
+  // Boutons IA
   if (GEMINI_KEY) {
     const b = document.getElementById("btnIA");
     if (b) { b.className = "btn-refresh-hdr ia-on"; b.textContent = "🤖 IA activée"; }
@@ -1265,15 +1277,16 @@ window.addEventListener("load", async () => {
     if (r) r.style.display = "";
   }
 
-  // 2) Rafraîchissement en arrière-plan depuis Supabase (met à jour si besoin)
-  await Promise.all([loadPatients(), loadMails()]);
-  render();
+  // 2) Rafraîchissement en arrière-plan depuis Supabase (n'a pas besoin de bloquer l'affichage)
+  (async () => {
+    try { await waitForSupabase(); await Promise.all([loadPatients(), loadMails()]); render(); } catch(e) {}
+  })();
 
-  // 3) Init Google Auth après chargement du script GSI
+  // 3) Init Google Auth dès que la librairie Google est prête
   const waitGSI = setInterval(() => {
     if (typeof google !== "undefined") { clearInterval(waitGSI); initGoogleAuth(); }
   }, 200);
-});
+})();
 </script>
 </body>
 </html>
