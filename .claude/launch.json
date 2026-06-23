@@ -4,7 +4,7 @@
     {
       "name": "tripatient",
       "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-Command", "Start-Process", "http://localhost:8080"],
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "serveur.ps1"],
       "port": 8080
     }
   ]
