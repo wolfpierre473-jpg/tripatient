@@ -1034,6 +1034,13 @@ function fmtDate(iso) {
   catch { return iso; }
 }
 
+// Échappe le HTML — empêche le contenu des mails (newsletters HTML, etc.) de casser la mise en page
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function classerTous() {
   const pMap = Object.fromEntries(PATIENTS.map(p => [p.email?.toLowerCase(), p]));
   return MAILS.map(m => {
@@ -1053,11 +1060,11 @@ function classerTous() {
 function renderCard(item, idx) {
   const { mail, patient, classe, regle_label } = item;
   const meta = CLASSE_META[classe];
-  const nom  = patient ? `${patient.prenom} ${patient.nom}` : (mail.nom_expediteur||mail.email_expediteur);
-  const pid  = patient ? `(${patient.id})` : "";
-  const srcLabel = { gmail:"📧 Gmail", demo:"📝 Démo", manuel:"📝 Manuel" }[mail.source]||mail.source;
+  const nom  = esc(patient ? `${patient.prenom} ${patient.nom}` : (mail.nom_expediteur||mail.email_expediteur));
+  const pid  = patient ? `(${esc(patient.id)})` : "";
+  const srcLabel = { gmail:"📧 Gmail", demo:"📝 Démo", manuel:"📝 Manuel" }[mail.source]||esc(mail.source);
   const antec = patient?.antecedents?.length
-    ? (Array.isArray(patient.antecedents)?patient.antecedents:JSON.parse(patient.antecedents)).map(a=>`<span class="tag">${a}</span>`).join("")
+    ? (Array.isArray(patient.antecedents)?patient.antecedents:JSON.parse(patient.antecedents)).map(a=>`<span class="tag">${esc(a)}</span>`).join("")
     : `<span style="color:#a0aec0;font-size:0.78rem">Aucun antécédent</span>`;
 
   return `
@@ -1072,8 +1079,8 @@ function renderCard(item, idx) {
           <span class="src-badge">${srcLabel}</span>
           <span class="mail-time">${fmtDate(mail.date_reception)}</span>
         </div>
-        <div class="mail-sujet">📨 ${mail.sujet||"(sans objet)"}</div>
-        <div><span class="pattern-match">🔍 ${regle_label}</span>${mail.traite?` <span style="font-size:.68rem;color:#276749;margin-left:6px">✓ Traité</span>`:""}</div>
+        <div class="mail-sujet">📨 ${esc(mail.sujet||"(sans objet)")}</div>
+        <div><span class="pattern-match">🔍 ${esc(regle_label)}</span>${mail.traite?` <span style="font-size:.68rem;color:#276749;margin-left:6px">✓ Traité</span>`:""}</div>
       </div>
       <span class="expand-icon">▼</span>
     </div>
@@ -1083,22 +1090,22 @@ function renderCard(item, idx) {
         <div class="detail-box">
           <h4>🏥 Dossier patient</h4>
           ${patient?`
-            <p><strong>Risque :</strong> ${patient.risque}</p>
+            <p><strong>Risque :</strong> ${esc(patient.risque)}</p>
             <p style="margin-top:5px"><strong>Antécédents :</strong></p>
             <p style="margin-top:3px">${antec}</p>
-            ${patient.traitement_en_cours?`<p style="margin-top:5px"><strong>Traitement :</strong> ${patient.traitement_en_cours}</p>`:""}
-            ${patient.prochain_rdv?`<p style="margin-top:4px"><strong>Prochain RDV :</strong> ${patient.prochain_rdv}</p>`:""}
-          `:`<p style="color:#a0aec0">Expéditeur non enregistré</p><p style="font-size:.77rem;color:#718096;margin-top:4px">${mail.email_expediteur}</p>`}
+            ${patient.traitement_en_cours?`<p style="margin-top:5px"><strong>Traitement :</strong> ${esc(patient.traitement_en_cours)}</p>`:""}
+            ${patient.prochain_rdv?`<p style="margin-top:4px"><strong>Prochain RDV :</strong> ${esc(patient.prochain_rdv)}</p>`:""}
+          `:`<p style="color:#a0aec0">Expéditeur non enregistré</p><p style="font-size:.77rem;color:#718096;margin-top:4px">${esc(mail.email_expediteur)}</p>`}
         </div>
         <div class="detail-box">
           <h4>📋 Classification</h4>
           <p><strong>Niveau :</strong> <span class="rule-hit ${classe}">${meta.label}</span></p>
-          <p style="margin-top:5px"><strong>Règle :</strong> ${regle_label}</p>
+          <p style="margin-top:5px"><strong>Règle :</strong> ${esc(regle_label)}</p>
           <p style="margin-top:5px"><strong>Reçu :</strong> ${fmtDate(mail.date_reception)}</p>
         </div>
       </div>
       <div class="mail-body-box">
-        <h4>✉️ Contenu du message</h4>${mail.corps||"(corps vide)"}
+        <h4>✉️ Contenu du message</h4>${esc(mail.corps||"(corps vide)")}
       </div>
       ${mail.pieces_jointes?.length ? `
         <div class="photos-box">
@@ -1119,7 +1126,7 @@ function renderCard(item, idx) {
       </div>
       ${mail.source==="gmail" && mail.gmail_id ? `
         <div class="reply-form" id="replyform-${mail.id}" style="display:none">
-          <div class="reply-to">À : <strong>${mail.email_expediteur}</strong></div>
+          <div class="reply-to">À : <strong>${esc(mail.email_expediteur)}</strong></div>
           <textarea id="replytext-${mail.id}" placeholder="Écrivez votre réponse au patient…"></textarea>
           <div class="reply-actions">
             <button class="btn-ghost" onclick="cancelReply('${mail.id}')">Annuler</button>
