@@ -826,14 +826,15 @@ async function reclasserToutIA() {
   if (!confirm(`Reclasser les ${cibles.length} mails avec l'IA ?\nCela peut prendre un moment.`)) return;
 
   setSyncBar(true, "Reclassement par IA…");
-  let fait = 0;
-  try {
-    for (let i = 0; i < cibles.length; i += 10) {
-      setSyncBar(true, `Reclassement IA ${Math.min(i+10,cibles.length)}/${cibles.length}…`);
-      const lot = cibles.slice(i, i+10).map(m => ({
-        id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
-        expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
-      }));
+  let fait = 0, echecsConsecutifs = 0, saturee = false;
+  for (let i = 0; i < cibles.length; i += 10) {
+    if (saturee) break; // IA saturée → on s'arrête, le reste garde son classement actuel
+    setSyncBar(true, `Reclassement IA ${Math.min(i+10,cibles.length)}/${cibles.length}…`);
+    const lot = cibles.slice(i, i+10).map(m => ({
+      id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
+      expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
+    }));
+    try {
       const res = await aiClassifyRetry(lot);
       for (const r of res) {
         const m = cibles.find(x => x.id === r.id);
@@ -844,16 +845,17 @@ async function reclasserToutIA() {
           if (sb) await sb.from("mails").update({ classe:m.classe, regle_label:m.regle_label }).eq("id", m.id);
         }
       }
-      await sleep(4500); // pause entre lots pour respecter la limite gratuite (~15 req/min)
+      echecsConsecutifs = 0;
+      await sleep(4500); // pause anti-saturation entre lots
+    } catch(e) {
+      echecsConsecutifs++;
+      if (echecsConsecutifs >= 2) saturee = true;
     }
-    setSyncBar(false);
-    render();
-    showToast(`${fait} mail(s) reclassés par l'IA ✅`, 3000, "#276749");
-  } catch(e) {
-    setSyncBar(false);
-    render();
-    showToast("IA indisponible — reclassement interrompu : " + e.message);
   }
+  setSyncBar(false);
+  render();
+  if (saturee) showToast(`IA saturée — ${fait} mails reclassés, le reste garde son classement. Réessayez plus tard.`, 5000, "#c05621");
+  else showToast(`${fait} mail(s) reclassés par l'IA ✅`, 3000, "#276749");
 }
 
 // Importe les mails plus anciens (au-delà de la synchro incrémentale)
@@ -959,18 +961,20 @@ async function syncGmail(forceQuery=null) {
       nouveaux.push(mail);
     }
 
-    // Affinage par IA (si une clé Gemini est configurée) — par lots de 10
+    // Affinage par IA (si une clé Gemini est configurée) — par lots de 10.
+    // RÈGLE DE REPLI : si un lot sature, ces mails GARDENT leur classement par mots-clés.
+    // Si l'IA sature 2 fois de suite, on arrête l'IA et les mots-clés finissent le travail.
     if (GEMINI_KEY && nouveaux.length) {
-      try {
-        for (let i = 0; i < nouveaux.length; i += 10) {
-          setSyncBar(true, `Analyse IA ${Math.min(i+10,nouveaux.length)}/${nouveaux.length}…`);
-          const lot = nouveaux.slice(i, i+10).map(m => ({
-            id: m.id,
-            sujet: m.sujet,
-            corps: (m.corps||"").slice(0, 600),
-            expediteur: m.email_expediteur,
-            estPatient: !!getPatientByEmail(m.email_expediteur),
-          }));
+      let echecsConsecutifs = 0;
+      let iaAbandonnee = false;
+      for (let i = 0; i < nouveaux.length; i += 10) {
+        if (iaAbandonnee) break; // les mails restants gardent déjà leur classement par règles
+        setSyncBar(true, `Analyse IA ${Math.min(i+10,nouveaux.length)}/${nouveaux.length}…`);
+        const lot = nouveaux.slice(i, i+10).map(m => ({
+          id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
+          expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
+        }));
+        try {
           const res = await aiClassifyRetry(lot);
           res.forEach(r => {
             const m = nouveaux.find(x => x.id === r.id);
@@ -979,10 +983,16 @@ async function syncGmail(forceQuery=null) {
               m.regle_label = "IA : " + (r.raison || r.classe);
             }
           });
-          await sleep(4500); // pause entre lots (limite gratuite ~15 req/min)
+          echecsConsecutifs = 0;            // ce lot a réussi
+          await sleep(4500);                // pause anti-saturation entre lots
+        } catch(e) {
+          // IA saturée pour ce lot → ces mails restent classés par mots-clés (déjà fait en base)
+          echecsConsecutifs++;
+          if (echecsConsecutifs >= 2) {
+            iaAbandonnee = true;
+            showToast("IA saturée — tri par mots-clés pris le relais.", 4500, "#c05621");
+          }
         }
-      } catch(e) {
-        showToast("IA indisponible — classement par règles conservé.", 4000, "#c05621");
       }
     }
 
