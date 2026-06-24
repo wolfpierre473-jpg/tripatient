@@ -100,6 +100,7 @@
     .mail-sujet   { font-size:0.84rem; color:#4a5568; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .pattern-match { display:inline-flex; align-items:center; gap:4px; margin-top:4px; font-size:0.69rem; font-weight:600; color:#805ad5; background:#faf5ff; border:1px solid #e9d8fd; border-radius:6px; padding:1px 7px; }
     .src-badge { font-size:0.67rem; color:#a0aec0; background:#f7fafc; border:1px solid #e2e8f0; border-radius:5px; padding:1px 6px; }
+    .ia-badge { font-size:0.72rem; background:#faf5ff; border:1px solid #e9d8fd; border-radius:5px; padding:1px 5px; cursor:help; }
     .expand-icon { color:#cbd5e0; font-size:0.72rem; padding-top:4px; transition:transform .2s; flex-shrink:0; }
     .mail-card.open .expand-icon { transform:rotate(180deg); }
 
@@ -1063,6 +1064,7 @@ function renderCard(item, idx) {
   const nom  = esc(patient ? `${patient.prenom} ${patient.nom}` : (mail.nom_expediteur||mail.email_expediteur));
   const pid  = patient ? `(${esc(patient.id)})` : "";
   const srcLabel = { gmail:"📧 Gmail", demo:"📝 Démo", manuel:"📝 Manuel" }[mail.source]||esc(mail.source);
+  const parIA = typeof regle_label === "string" && regle_label.startsWith("IA");
   const antec = patient?.antecedents?.length
     ? (Array.isArray(patient.antecedents)?patient.antecedents:JSON.parse(patient.antecedents)).map(a=>`<span class="tag">${esc(a)}</span>`).join("")
     : `<span style="color:#a0aec0;font-size:0.78rem">Aucun antécédent</span>`;
@@ -1077,6 +1079,7 @@ function renderCard(item, idx) {
           <span class="patient-name">${nom}</span>
           <span class="patient-id">${pid}</span>
           <span class="src-badge">${srcLabel}</span>
+          ${parIA ? `<span class="ia-badge" title="Classé par l'IA">🤖</span>` : ""}
           <span class="mail-time">${fmtDate(mail.date_reception)}</span>
         </div>
         <div class="mail-sujet">📨 ${esc(mail.sujet||"(sans objet)")}</div>
