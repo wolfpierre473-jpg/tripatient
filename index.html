@@ -362,7 +362,7 @@ const REGLES = [
   { id:"acne",             label:"Acné",                                   classe:"pasurgent", tests:[/acn[eé]/i] },
   { id:"verrues",          label:"Verrues",                                classe:"pasurgent", tests:[/verrues?/i] },
   { id:"controle-cutane",  label:"Contrôle cutané / bilan de routine",     classe:"pasurgent", tests:[/contr[oô]le\s+cutan[eé]/i,/bilan\s+(cutan[eé]|g[eé]n[eé]ral|de\s+routine)/i,/contr[oô]le\s+de\s+routine/i] },
-  { id:"rdv-sans-prec",    label:"Rendez-vous sans précision",             classe:"pasurgent", tests:[/rendez-vous/i,/rendez\s+vous/i,/prendre\s+(un\s+)?rdv/i] },
+  { id:"rdv-sans-prec",    label:"Rendez-vous sans précision",             classe:"pasurgent", tests:[/rendez-vous/i,/rendez\s+vous/i,/\brdv\b/i] },
   { id:"controle",         label:"Contrôle général",                       classe:"pasurgent", tests:[/contr[oô]le/i,/suivi\s+r[eé]gulier/i] },
   { id:"photo",            label:"Envoi de photo",                         classe:"inconnu",   tests:[/photo/i] },
   { id:"bouton-simple",    label:"Bouton sans précision",                  classe:"inconnu",   tests:[/\bboutons?\b/i] },
@@ -387,14 +387,14 @@ const EXPEDITEUR_COMMERCIAL = [
 ];
 // Noms de domaines / entreprises connues (commerce, pub, réseaux, services)
 const DOMAINES_COMMERCIAL = [
-  /vinted/i, /laposte/i, /\bla poste\b/i, /colissimo/i, /chronopost/i, /mondialrelay/i,
+  /vinted/i, /colissimo/i, /chronopost/i, /mondialrelay/i,
   /amazon/i, /cdiscount/i, /\bfnac\b/i, /darty/i, /leboncoin/i, /ebay/i, /aliexpress/i, /shein/i, /temu/i,
   /paypal/i, /\bn26\b/i, /revolut/i, /\bboursorama/i, /\blcl\b/i, /creditmutuel/i, /banquepop/i,
   /linkedin/i, /facebook/i, /instagram/i, /\btiktok/i, /\bx\.com/i, /twitter/i, /snapchat/i, /pinterest/i,
   /booking/i, /airbnb/i, /\buber/i, /deliveroo/i, /ubereats/i, /justeat/i, /\bsncf/i, /\bratp\b/i, /blablacar/i,
-  /\bedf\b/i, /\bengie/i, /totalenergies/i, /\bfree\.fr/i, /orange\.fr/i, /\bsfr\b/i, /bouygues/i, /\bsosh/i,
-  /spotify/i, /netflix/i, /youtube/i, /\bapple\b/i, /microsoft/i, /\bgoogle\b/i, /paypal/i,
-  /doctolib/i, /\bameli/i, /\bcpam\b/i, /\bmaaf\b/i, /\baxa\b/i, /\ballianz/i, /matmut/i, /\bmma\b/i,
+  /totalenergies/i,
+  /spotify/i, /netflix/i, /youtube/i, /microsoft/i, /paypal/i,
+  /doctolib/i, /\bameli/i, /\bcpam\b/i, /matmut/i,
   /aliexpress/i, /wish/i, /asos/i, /zalando/i, /zara/i, /\bh&m\b/i, /decathlon/i,
 ];
 // Marqueurs commerciaux dans le corps du mail
@@ -408,35 +408,71 @@ const CORPS_COMMERCIAL = [
   /bon\s+de\s+r[ée]duction/i, /flash\s+sale/i, /black\s+friday/i, /vente\s+priv[ée]e/i,
 ];
 
-function estCommercial(mail) {
+// Mots présents dans un NOM d'expéditeur qui trahissent une entreprise / organisation
+const MOTS_ENTREPRISE = [
+  /[ée]nergies?/i, /collecte/i, /m[ée]dical/i, /\bservices?\b/i, /\bnews\b/i, /\binfos?\b/i,
+  /\blabo/i, /pharma/i, /assurances?/i, /mutuelle/i, /banque/i, /\bsarl\b/i, /\bsas\b/i, /\beurl\b/i,
+  /groupe?/i, /agence/i, /clinique/i, /\bcentre\b/i, /association/i, /f[ée]d[ée]ration/i, /syndicat/i,
+  /mairie/i, /pr[ée]fecture/i, /caisse/i, /urssaf/i, /imp[oô]ts/i, /\bteam\b/i, /[ée]quipe/i,
+  /support/i, /boutique/i, /\bshop\b/i, /\bstore\b/i, /\bimmo/i, /\bauto\b/i, /solutions?/i,
+  /technologies?/i, /\bsanté\b/i, /\bsa\b/i, /compagnie/i, /soci[ée]t[ée]/i, /\bclub\b/i, /\bcie\b/i,
+];
+
+// Le nom ressemble-t-il à un NOM DE PERSONNE ? (1 ou 2 mots, que des lettres, pas un mot d'entreprise)
+function ressembleNomPersonne(nom) {
+  if (!nom) return false;
+  const mots = nom.trim().split(/\s+/).filter(Boolean);
+  if (mots.length < 1 || mots.length > 2) return false;
+  if (MOTS_ENTREPRISE.some(re => re.test(nom))) return false;
+  return mots.every(m => /^[a-zA-ZàâäéèêëïîôöùûüçÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ'’\-]{2,}$/.test(m));
+}
+
+// Signal FORT d'entreprise (adresse email type news@/noreply, marque connue, mot d'entreprise
+// dans le nom, ou raison sociale de 3+ mots). Prime sur l'apparence du nom.
+function aSignalEntrepriseFort(mail) {
   const exped = ((mail.email_expediteur||"") + " " + (mail.nom_expediteur||"")).toLowerCase();
   if (EXPEDITEUR_COMMERCIAL.some(re => re.test(exped))) return true;
   if (DOMAINES_COMMERCIAL.some(re => re.test(exped))) return true;
+  const nom = mail.nom_expediteur || "";
+  if (MOTS_ENTREPRISE.some(re => re.test(nom))) return true;
+  if (nom.trim().split(/\s+/).filter(Boolean).length >= 3) return true;
+  return false;
+}
+
+// L'expéditeur est-il CLAIREMENT une entreprise / organisation ?
+function estClairementEntreprise(mail) {
+  if (aSignalEntrepriseFort(mail)) return true;
+  // Marqueurs commerciaux dans le corps, SAUF si le nom est clairement une personne
   const txt = (mail.sujet||"") + " " + (mail.corps||"");
-  if (CORPS_COMMERCIAL.some(re => re.test(txt))) return true;
+  if (CORPS_COMMERCIAL.some(re => re.test(txt)) && !ressembleNomPersonne(mail.nom_expediteur)) return true;
   return false;
 }
 
 // Classification.  isPatient = l'expéditeur est un patient enregistré.
 function classerMail(mail, isPatient=false) {
   const txt = (mail.sujet||"") + " " + (mail.corps||"");
+  // Un signal fort d'entreprise (news@, marque…) annule la présomption "personne"
+  const estPersonne = !aSignalEntrepriseFort(mail) && ressembleNomPersonne(mail.nom_expediteur);
+
   // 1) Factures / paiements → URGENT (priorité maximale, même pour les fournisseurs)
   if (FACTURE_TESTS.some(re => re.test(txt))) {
     return { classe:"urgent", regle_label:"Facture / paiement" };
   }
-  // 2) Règles médicales (priorité sur le commercial : un vrai mail médical ne doit
-  //    jamais finir en "Autre", même si l'expéditeur n'est pas un patient enregistré)
+  // 2) Entreprise/pub ÉVIDENTE et non-patient → "Autre" (avant les règles, pour éviter
+  //    qu'une newsletter type "VIDAL ... plaque" tombe en moyen). Une PERSONNE n'est jamais ici.
+  if (!isPatient && !estPersonne && estClairementEntreprise(mail)) {
+    return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
+  }
+  // 3) Règles médicales (un vrai mail médical ne doit jamais finir en "Autre")
   for (const r of REGLES) {
     for (const re of r.tests) {
       if (re.test(txt)) return { classe:r.classe, regle_label:r.label };
     }
   }
-  // 3) Mail d'entreprise / pub / notification non lié à un patient → "Autre"
-  if (!isPatient && estCommercial(mail)) {
-    return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
-  }
-  // 4) Aucun pattern reconnu
+  // 4) Aucune règle : un nom de PERSONNE = patient probable → "?", pas "Autre"
   if (isPatient) return { classe:"inconnu", regle_label:"Patient — cas non répertorié" };
+  if (estPersonne) return { classe:"inconnu", regle_label:"Expéditeur (personne) — à qualifier" };
+  if (estClairementEntreprise(mail)) return { classe:"autre", regle_label:"Mail d'entreprise / publicité" };
   return { classe:"autre", regle_label:"Expéditeur inconnu / non-patient" };
 }
 
