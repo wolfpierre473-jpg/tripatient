@@ -213,6 +213,7 @@
     <button class="btn-refresh-hdr" onclick="importerHistorique()" title="Importer les mails plus anciens">⏳ Importer l'historique</button>
     <button class="btn-refresh-hdr" id="btnIA" onclick="configurerIA()" title="Activer le tri par IA (Gemini)">🤖 IA</button>
     <button class="btn-refresh-hdr" id="btnReclasser" onclick="reclasserToutIA()" title="Repasser tous les mails dans l'IA" style="display:none">♻️ Reclasser (IA)</button>
+    <button class="btn-refresh-hdr" id="btnIaPanel" onclick="openIaPanel()" title="Modifier et tester les instructions de l'IA" style="display:none">⚙️ Instructions IA</button>
     <button class="btn-gmail" id="btnGmail" onclick="handleGmailAuth()">
       <span class="gmail-dot" id="gmailDot"></span>
       <span id="btnGmailLabel">Connecter Gmail</span>
@@ -257,6 +258,41 @@
       <button class="btn-ghost" onclick="closeModal()">Annuler</button>
       <button class="btn-primary" onclick="ajouterMail()">Analyser & Classer</button>
     </div>
+  </div>
+</div>
+
+<!-- Panneau IA : instructions éditables + banc de test -->
+<div class="modal-overlay" id="iaOverlay" onclick="closeIaIfOutside(event)">
+  <div class="modal" style="width:min(680px,96vw)">
+    <h2>⚙️ Instructions de l'IA</h2>
+    <p style="font-size:0.8rem;color:#718096;margin-bottom:12px">
+      Modifiez les consignes que l'IA suit pour classer les mails, puis testez en bas avant d'appliquer.
+      Après avoir enregistré, cliquez sur ♻️ Reclasser (IA) pour réappliquer à tous les mails.
+    </p>
+    <div class="form-group">
+      <label>Consignes données à l'IA</label>
+      <textarea id="iaInstructions" style="min-height:220px;font-size:0.8rem;line-height:1.5"></textarea>
+    </div>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn-ghost" onclick="resetIaInstructions()">↺ Réinitialiser</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-ghost" onclick="closeIaPanel()">Fermer</button>
+        <button class="btn-primary" onclick="saveIaInstructions()">💾 Enregistrer</button>
+      </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">
+
+    <h2 style="font-size:0.98rem">🧪 Banc de test</h2>
+    <p style="font-size:0.8rem;color:#718096;margin-bottom:10px">Testez un mail fictif pour voir comment l'IA le classerait (avec les consignes ci-dessus, même non enregistrées).</p>
+    <div class="form-group"><label>Nom de l'expéditeur</label><input type="text" id="testNom" placeholder="Ex : Fabienne Roche, ou VIDAL News" /></div>
+    <div class="form-group"><label>Adresse email</label><input type="text" id="testEmail" placeholder="Ex : fabienne.roche@gmail.com" /></div>
+    <div class="form-group"><label>Sujet</label><input type="text" id="testSujet" placeholder="Ex : Re: RDV Jehanne" /></div>
+    <div class="form-group"><label>Contenu</label><textarea id="testCorps" placeholder="Texte du mail…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="btnTester" onclick="testerIA()">🧪 Tester</button>
+    </div>
+    <div id="testResultat" style="margin-top:10px"></div>
   </div>
 </div>
 
@@ -769,16 +805,32 @@ function configurerIA() {
   location.reload();
 }
 
-// Classe un lot de mails via l'IA Gemini. Renvoie [{id, classe, raison}] ou lève une erreur.
-async function aiClassifyBatch(items) {
-  const prompt = `Tu es un assistant de tri pour un cabinet de DERMATOLOGIE. Classe chaque email dans EXACTEMENT une de ces catégories :
-- "urgent" : lésion qui saigne/grossit, bouton persistant, plaie avec croûtes, annulation de rdv, suite de consultation passée, FACTURE ou paiement, peau blanche près du nez, douleur/inquiétude forte.
-- "moyen" : grain de beauté nouveau ou suspect, plaque cutanée, rougeur sous l'œil, demande d'ordonnance/renouvellement, contrôle sous biothérapie.
+// Instructions par défaut données à l'IA (modifiables par l'utilisateur via ⚙️ Instructions IA)
+const IA_INSTRUCTIONS_DEFAUT = `Tu es un assistant de tri pour un cabinet de DERMATOLOGIE. Tu classes les emails reçus par le médecin.
+
+RÈGLE PRIORITAIRE SUR L'EXPÉDITEUR :
+- Si le nom de l'expéditeur est un NOM DE PERSONNE (un prénom et/ou un nom de famille, ex : "Fabienne Roche", "Jean Dupont", ou une adresse comme "marie.lefevre@gmail.com"), alors c'est presque toujours un PATIENT. Ne le mets JAMAIS dans "autre". Classe-le selon le contenu médical, ou "inconnu" si le motif n'est pas clair.
+- Ne mets dans "autre" QUE les expéditeurs clairement NON humains : entreprises, marques, laboratoires, services (VIDAL, Vinted, La Poste, Amazon, Doctolib...), adresses automatiques (noreply, newsletter, notification, no-reply...), ou contenu publicitaire évident.
+- En cas de doute entre "autre" et une catégorie patient : privilégie la catégorie patient.
+
+CATÉGORIES :
+- "urgent" : lésion qui saigne ou grossit, bouton persistant, plaie avec croûtes, annulation de rendez-vous, suite d'une consultation passée, FACTURE ou paiement, peau blanche près du nez, douleur ou inquiétude forte.
+- "moyen" : grain de beauté nouveau ou suspect, plaque cutanée, rougeur sous l'œil, demande d'ordonnance ou de renouvellement, contrôle cutané sous biothérapie.
 - "pasurgent" : acné, verrues, contrôle de routine, simple demande de rendez-vous sans précision.
-- "inconnu" : email d'un VRAI patient mais dont le motif n'entre dans aucune catégorie ci-dessus.
-- "autre" : email NON lié à un patient (publicité, entreprise, Vinted, La Poste, newsletter, réseau social, notification automatique).
+- "inconnu" : email d'un patient (une personne) dont le motif n'entre dans aucune catégorie ci-dessus.
+- "autre" : email NON lié à un patient (entreprise, marque, publicité, newsletter, réseau social, notification automatique).`;
+
+function getIaInstructions() {
+  return localStorage.getItem("tp_iaInstructions") || IA_INSTRUCTIONS_DEFAUT;
+}
+
+// Classe un lot de mails via l'IA Gemini. Renvoie [{id, classe, raison}] ou lève une erreur.
+// instructionsOverride : permet de tester des consignes non encore enregistrées.
+async function aiClassifyBatch(items, instructionsOverride) {
+  const prompt = `${instructionsOverride || getIaInstructions()}
 
 Réponds UNIQUEMENT en JSON : un tableau d'objets {"id":"...","classe":"...","raison":"courte phrase en français"}.
+Chaque email a un champ "expediteurNom" (nom affiché) et "expediteur" (adresse) — sers-t'en pour la règle sur l'expéditeur.
 
 Emails à classer :
 ${JSON.stringify(items)}`;
@@ -833,7 +885,8 @@ async function reclasserToutIA() {
     setSyncBar(true, `Reclassement IA ${Math.min(i+10,cibles.length)}/${cibles.length}…`);
     const lot = cibles.slice(i, i+10).map(m => ({
       id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
-      expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
+      expediteurNom: m.nom_expediteur || "", expediteur: m.email_expediteur,
+      estPatient: !!getPatientByEmail(m.email_expediteur),
     }));
     try {
       const res = await aiClassifyRetry(lot);
@@ -857,6 +910,59 @@ async function reclasserToutIA() {
   render();
   if (saturee) showToast(`IA saturée — ${fait} mails reclassés, le reste garde son classement. Réessayez plus tard.`, 5000, "#c05621");
   else showToast(`${fait} mail(s) reclassés par l'IA ✅`, 3000, "#276749");
+}
+
+// ── Panneau "Instructions IA" + banc de test ──
+function openIaPanel() {
+  document.getElementById("iaInstructions").value = getIaInstructions();
+  document.getElementById("testResultat").innerHTML = "";
+  document.getElementById("iaOverlay").classList.add("open");
+}
+function closeIaPanel() { document.getElementById("iaOverlay").classList.remove("open"); }
+function closeIaIfOutside(e) { if (e.target === document.getElementById("iaOverlay")) closeIaPanel(); }
+
+function saveIaInstructions() {
+  const v = document.getElementById("iaInstructions").value.trim();
+  if (!v) { showToast("Les consignes ne peuvent pas être vides."); return; }
+  localStorage.setItem("tp_iaInstructions", v);
+  showToast("Consignes IA enregistrées. Cliquez ♻️ Reclasser pour les appliquer.", 4500, "#276749");
+}
+function resetIaInstructions() {
+  if (!confirm("Réinitialiser les consignes par défaut ?")) return;
+  localStorage.removeItem("tp_iaInstructions");
+  document.getElementById("iaInstructions").value = IA_INSTRUCTIONS_DEFAUT;
+  showToast("Consignes réinitialisées.", 3000, "#276749");
+}
+
+async function testerIA() {
+  if (!GEMINI_KEY) { showToast("Activez d'abord l'IA (bouton 🤖 IA)."); return; }
+  const item = {
+    id: "test",
+    expediteurNom: document.getElementById("testNom").value.trim(),
+    expediteur:    document.getElementById("testEmail").value.trim(),
+    sujet:         document.getElementById("testSujet").value.trim(),
+    corps:         document.getElementById("testCorps").value.trim().slice(0, 600),
+    estPatient:    false,
+  };
+  if (!item.sujet && !item.corps && !item.expediteurNom) { showToast("Remplissez au moins un champ à tester."); return; }
+  const instr = document.getElementById("iaInstructions").value;
+  const btn   = document.getElementById("btnTester");
+  const zone  = document.getElementById("testResultat");
+  btn.disabled = true; btn.textContent = "Analyse…";
+  zone.innerHTML = `<span style="font-size:0.82rem;color:#718096">Analyse en cours…</span>`;
+  try {
+    const out  = await aiClassifyBatch([item], instr);
+    const r    = out[0] || {};
+    const meta = CLASSE_META[r.classe] || { emoji:"❓", label:r.classe||"?" };
+    zone.innerHTML = `<div style="background:#f7fafc;border-radius:8px;padding:12px 14px">
+      <div style="font-size:0.95rem;font-weight:700"><span class="rule-hit ${r.classe||''}">${meta.emoji} ${meta.label}</span></div>
+      <div style="font-size:0.82rem;color:#4a5568;margin-top:6px">${esc(r.raison || "(aucune raison fournie)")}</div>
+    </div>`;
+  } catch(e) {
+    zone.innerHTML = `<span style="color:#c53030;font-size:0.82rem">Erreur : ${esc(e.message)}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "🧪 Tester";
+  }
 }
 
 // Importe les mails plus anciens (au-delà de la synchro incrémentale)
@@ -973,7 +1079,8 @@ async function syncGmail(forceQuery=null) {
         setSyncBar(true, `Analyse IA ${Math.min(i+10,nouveaux.length)}/${nouveaux.length}…`);
         const lot = nouveaux.slice(i, i+10).map(m => ({
           id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
-          expediteur: m.email_expediteur, estPatient: !!getPatientByEmail(m.email_expediteur),
+          expediteurNom: m.nom_expediteur || "", expediteur: m.email_expediteur,
+          estPatient: !!getPatientByEmail(m.email_expediteur),
         }));
         try {
           const res = await aiClassifyRetry(lot);
@@ -1295,6 +1402,8 @@ updateClock(); setInterval(updateClock, 1000);
     if (b) { b.className = "btn-refresh-hdr ia-on"; b.textContent = "🤖 IA activée"; }
     const r = document.getElementById("btnReclasser");
     if (r) r.style.display = "";
+    const p = document.getElementById("btnIaPanel");
+    if (p) p.style.display = "";
   }
 
   // 2) Rafraîchissement en arrière-plan depuis Supabase (n'a pas besoin de bloquer l'affichage)
