@@ -872,7 +872,7 @@ Emails à classer :
 ${JSON.stringify(items)}`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_KEY}`,
     {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
@@ -916,10 +916,10 @@ async function reclasserToutIA() {
 
   setSyncBar(true, "Reclassement par IA…");
   let fait = 0, echecsConsecutifs = 0, saturee = false;
-  for (let i = 0; i < cibles.length; i += 10) {
+  for (let i = 0; i < cibles.length; i += 25) {
     if (saturee) break; // IA saturée → on s'arrête, le reste garde son classement actuel
-    setSyncBar(true, `Reclassement IA ${Math.min(i+10,cibles.length)}/${cibles.length}…`);
-    const lot = cibles.slice(i, i+10).map(m => ({
+    setSyncBar(true, `Reclassement IA ${Math.min(i+25,cibles.length)}/${cibles.length}…`);
+    const lot = cibles.slice(i, i+25).map(m => ({
       id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
       expediteurNom: m.nom_expediteur || "", expediteur: m.email_expediteur,
       estPatient: !!getPatientByEmail(m.email_expediteur),
@@ -936,7 +936,7 @@ async function reclasserToutIA() {
         }
       }
       echecsConsecutifs = 0;
-      await sleep(4500); // pause anti-saturation entre lots
+      await sleep(2200); // pause entre lots (flash-lite tolère ~30 req/min)
     } catch(e) {
       echecsConsecutifs++;
       if (echecsConsecutifs >= 2) saturee = true;
@@ -1110,10 +1110,10 @@ async function syncGmail(forceQuery=null) {
     if (GEMINI_KEY && nouveaux.length) {
       let echecsConsecutifs = 0;
       let iaAbandonnee = false;
-      for (let i = 0; i < nouveaux.length; i += 10) {
+      for (let i = 0; i < nouveaux.length; i += 25) {
         if (iaAbandonnee) break; // les mails restants gardent déjà leur classement par règles
-        setSyncBar(true, `Analyse IA ${Math.min(i+10,nouveaux.length)}/${nouveaux.length}…`);
-        const lot = nouveaux.slice(i, i+10).map(m => ({
+        setSyncBar(true, `Analyse IA ${Math.min(i+25,nouveaux.length)}/${nouveaux.length}…`);
+        const lot = nouveaux.slice(i, i+25).map(m => ({
           id: m.id, sujet: m.sujet, corps: (m.corps||"").slice(0,600),
           expediteurNom: m.nom_expediteur || "", expediteur: m.email_expediteur,
           estPatient: !!getPatientByEmail(m.email_expediteur),
@@ -1128,7 +1128,7 @@ async function syncGmail(forceQuery=null) {
             }
           });
           echecsConsecutifs = 0;            // ce lot a réussi
-          await sleep(4500);                // pause anti-saturation entre lots
+          await sleep(2200);                // pause entre lots (flash-lite ~30 req/min)
         } catch(e) {
           // IA saturée pour ce lot → ces mails restent classés par mots-clés (déjà fait en base)
           echecsConsecutifs++;
